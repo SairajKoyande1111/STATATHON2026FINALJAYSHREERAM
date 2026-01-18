@@ -1,0 +1,35 @@
+# L-Diversity: Enhancing K-Anonymity
+
+L-Diversity is a privacy enhancement technique that addresses the shortcomings of K-Anonymity. While K-Anonymity ensures that an individual cannot be identified from a group of 'k' records, it does not prevent an attacker from discovering sensitive information if all records in that group share the same sensitive attribute value (Homogeneity Attack).
+
+## What is L-Diversity?
+L-Diversity requires that each "equivalence class" (a group of records with the same quasi-identifiers) has at least 'L' "well-represented" values for each sensitive attribute. This ensures that even if an attacker knows a person is in a specific group, they still have at most a 1/L probability of guessing their sensitive information correctly.
+
+## Configuration Options Explained:
+
+### 1. L-Value (Diversity Threshold)
+The 'L' value determines the minimum level of diversity required in each group. 
+- Higher L = Better privacy but more data distortion/suppression.
+- L=2 means every group must have at least 2 distinct sensitive values.
+
+### 2. Methods (Diversity Types):
+
+#### Distinct L-Diversity
+The simplest form. It requires that there are at least 'L' distinct values for the sensitive attribute in each equivalence class.
+- **Example:** If L=3, a group must have at least 3 different values (e.g., 'Flu', 'Cancer', 'Heart Disease').
+
+#### Entropy L-Diversity
+A more robust method that considers the distribution of values. It calculates the entropy (randomness) of the sensitive attributes in a group.
+- **Formula:** Entropy(Group) >= log(L)
+- This prevents "Background Knowledge Attacks" where one value is much more frequent than others, making it a likely guess even if other values are present.
+
+#### Recursive (c,l)-Diversity
+This is the most advanced and restrictive method. it ensures that the most frequent sensitive value does not appear too often compared to the less frequent ones.
+- It uses a constant 'c' to ensure that the frequency of the most common value is less than the sum of frequencies of the other values multiplied by 'c'.
+- It effectively handles skewed data distributions where some sensitive values are naturally very common.
+
+## Summary
+Use L-Diversity when you need to protect sensitive attributes (like medical diagnoses or salary) from being leaked within K-Anonymous groups. 
+- Use **Distinct** for basic protection.
+- Use **Entropy** for better distribution.
+- Use **Recursive** for highly skewed data.

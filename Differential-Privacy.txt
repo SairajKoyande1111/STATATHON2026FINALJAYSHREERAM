@@ -1,0 +1,17 @@
+Differential Privacy Algorithm Explanation
+=======================================
+
+Overview:
+Differential Privacy (DP) provides strong mathematical guarantees for privacy by adding calibrated statistical noise to data or query results. It ensures that the presence or absence of a single individual's record does not significantly affect the outcome of any analysis.
+
+Logic:
+1.  Sensitivity Calculation: The algorithm determines how much a single record can change the output (L1 Sensitivity).
+2.  Epsilon (ε): The privacy budget. A smaller epsilon means more privacy but more noise (less accuracy).
+3.  Laplace Mechanism: Calibrated noise from a Laplace distribution is added to numerical attributes. The noise scale is determined by Sensitivity/Epsilon.
+4.  Noise Injection: For each numerical value in the dataset, a noise value is sampled and added: Value_new = Value_original + Laplace(0, Sensitivity/ε).
+5.  Privacy-Utility Tradeoff: By adjusting Epsilon, users can choose the desired balance between data protection and statistical accuracy.
+
+Benefits:
+- Protection against all types of side-knowledge attacks.
+- Rigorous mathematical proof of privacy.
+- Useful for releasing aggregate statistics or perturbed microdata.

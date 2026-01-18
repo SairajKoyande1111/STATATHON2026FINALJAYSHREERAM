@@ -1,0 +1,55 @@
+# Evaluation of Effectiveness of Data Encryption/Anonymisation and Creation of improved Safe Data Tool
+
+**GOVERNMENT OF INDIA**
+**MINISTRY OF STATISTICS AND PROGRAMME IMPLEMENTATION**
+
+## Track:
+Data Security and Compliance
+
+## Description
+
+The National Statistical Office (NSO) as part of one of its mandates provide high-quality microdata to researchers for research and innovation. At the same time, it is also duty bound to protect privacy of its respondent. To achieve this, NSO releases anonymized unit-level survey data by removing direct identifiers. However, the rise of powerful data science techniques and vast external databases creates a risk of re-identification, where individuals can be pinpointed by combining datasets. The Digital Personal Data Protection (DPDP) Act, 2023 addresses this critical issue. It calls for participants to build a robust framework that aligns with the principles of the Digital Personal Data Protection (DPDP) Act, 2023 specifically, purpose limitation and data minimization. The central goal is to master the privacy-utility trade-offs: maximizing data protection while minimizing the loss of analytical value.
+
+## Expected Outcomes/Solutions
+
+Design the 'SafeData' Pipeline that accomplishes three core objectives:
+1. Audit the Present: Conduct a rigorous security audit of NSO's current de-identification methods by simulating realistic attacks to quantify the current true level of re-identification risk.
+2. Innovate for the Future: Develop a superior, configurable privacy enhancement module using modern privacy enhancing techniques.
+3. Prove the Value: Generate a comprehensive and automated Privacy-Utility Report that clearly demonstrates the trade-offs of your solution, providing actionable recommendations for NSO.
+
+## Relevance to National Priorities or Ongoing MoSPI Initiatives
+
+Aligns with the Digital Personal Data Protection Act, 2023 and MoSPI's responsibility to maintain data privacy while releasing public-use microdata for research.
+
+## Background Resources or Datasets
+- Sample Microdata
+- Auxiliary 'Ground Truth' File
+- Current Anonymisation Algorithm
+- Benchmark Tables
+- Report Template
+
+## Key Features Required
+
+**Risk Assessment Module:**
+- Ingests NSO's de-identified microdata and "true" identifier file (for testing only)
+- Simulates linkage attacks using quasi-identifiers
+- Computes and visualizes re-identification risk metrics
+
+**Privacy Enhancement Module:**
+- Implements at least one privacy-enhancing technique:
+  - Statistical Disclosure Control (SDC)
+  - Differential Privacy (DP)
+  - Synthetic Data Generation (SDG)
+
+**Utility Measurement Module:**
+- Compares the protected dataset to original using:
+  - Aggregate Statistics
+  - Distributions
+
+**Reporting & Configuration:**
+- UI/configuration file to control the pipeline
+- Auto-generated visual Privacy-Utility Report (PDF/HTML)
+
+## Impact Potential
+
+Improved privacy protection, maintained data utility, and policy-aligned data release practices for NSO.

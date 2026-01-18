@@ -1,0 +1,101 @@
+Record_ID,Age,Gender,State,Income_Bracket,Education_Level,Occupation,Marital_Status,Income_Amount,Employment_Type
+Nso_00001,59,Female,Tamil Nadu,50000-100000,Diploma,Teacher,single,62523,Full-time
+Nso_00002,48,male,Tamil Nadu,50000-100000,Secondary,Engineer,Divorced,38719,Full-time
+Nso_00003,23,F,Telangana,50000-100000,Doctorate,Engineer,Widowed,32465,Full-time
+Nso_00004,68,M,Delhi,50000-100000,Diploma,Teacher,Widowed,95044,Full-time
+Nso_00005,56,Female,Uttar Pradesh,50000-100000,Postgraduate,Analyst,D,119765,Full-time
+Nso_00006,49,female,West Bengal,50000-100000,Graduate,Artist,Widowed,99916,Full-time
+Nso_00007,61,male,Tamil Nadu,50000-100000,Secondary,Teacher,S,36772,Full-time
+Nso_00008,37,Male,Karnataka,50000-100000,Diploma,Technician,W,80449,Full-time
+Nso_00009,67,female,Uttar Pradesh,50000-100000,Secondary,Technician,Divorced,118740,Full-time
+Nso_00010,26,Female,Karnataka,50000-100000,Graduate,Analyst,Married,122719,Full-time
+Nso_00011,51,M,Karnataka,50000-100000,Diploma,Engineer,Widowed,92717,Full-time
+Nso_00012,38,Other,Telangana,50000-100000,Graduate,Manager,Widowed,86841,Full-time
+Nso_00013,23,Other,Tamil Nadu,50000-100000,Secondary,Manager,S,111010,Full-time
+Nso_00014,63,Female,Maharashtra,50000-100000,Diploma,Doctor,married,65168,Full-time
+Nso_00015,55,Female,Delhi,50000-100000,Doctorate,Consultant,Single,69646,Full-time
+Nso_00016,30,Male,Uttar Pradesh,50000-100000,Graduate,Manager,married,78959,Full-time
+Nso_00017,41,Female,Telangana,50000-100000,Graduate,Consultant,single,107616,Full-time
+Nso_00018,22,Female,Karnataka,50000-100000,Diploma,Engineer,S,95467,Full-time
+Nso_00019,54,female,West Bengal,50000-100000,Secondary,Doctor,Divorced,71269,Full-time
+Nso_00020,47,Other,Maharashtra,50000-100000,Diploma,Consultant,D,53530,Full-time
+Nso_00021,66,M,Gujarat,50000-100000,Diploma,Doctor,Single,74479,Full-time
+Nso_00022,29,F,West Bengal,50000-100000,Graduate,Analyst,single,123162,Full-time
+Nso_00023,58,F,Delhi,50000-100000,Diploma,Manager,D,89640,Full-time
+Nso_00024,26,M,Maharashtra,50000-100000,Doctorate,Engineer,S,113476,Full-time
+Nso_00025,61,Female,Karnataka,50000-100000,Doctorate,Consultant,M,47967,Full-time
+Nso_00026,48,M,West Bengal,50000-100000,Doctorate,Analyst,W,108845,Full-time
+Nso_00027,41,Other,Maharashtra,50000-100000,Graduate,Technician,single,40025,Full-time
+Nso_00028,25,Other,Maharashtra,50000-100000,Secondary,Consultant,D,119556,Full-time
+Nso_00029,37,Other,Tamil Nadu,50000-100000,Doctorate,Teacher,single,122267,Full-time
+Nso_00030,45,Male,Gujarat,50000-100000,Secondary,Teacher,M,104565,Full-time
+Nso_00031,Unknown,M,West Bengal,50000-100000,Postgraduate,Teacher,Widowed,61036,Full-time
+Nso_00032,48,male,West Bengal,50000-100000,Secondary,Analyst,W,36931,Full-time
+Nso_00033,38,M,Telangana,50000-100000,Doctorate,Engineer,Divorced,39654,Full-time
+Nso_00034,45,Male,Telangana,50000-100000,Doctorate,Consultant,single,50107,Full-time
+Nso_00035,62,M,Gujarat,50000-100000,Diploma,Teacher,Single,64420,Full-time
+Nso_00036,60,Female,Uttar Pradesh,50000-100000,Secondary,Consultant,Divorced,75047,Full-time
+Nso_00037,58,F,Delhi,50000-100000,Secondary,Teacher,Married,110342,Full-time
+Nso_00038,65,F,Maharashtra,50000-100000,Secondary,Technician,S,108454,Full-time
+Nso_00039,66,female,Uttar Pradesh,50000-100000,Secondary,Consultant,Married,111876,Full-time
+Nso_00040,67,M,West Bengal,50000-100000,Diploma,Doctor,W,60487,Full-time
+Nso_00041,64,male,Maharashtra,50000-100000,Doctorate,Doctor,W,37586,Full-time
+Nso_00042,36,Female,Telangana,50000-100000,Diploma,Technician,W,115119,Full-time
+Nso_00043,59,male,Tamil Nadu,50000-100000,Diploma,Teacher,single,108546,Full-time
+Nso_00044,56,Male,West Bengal,50000-100000,Graduate,Artist,D,54487,Full-time
+Nso_00045,35,male,Gujarat,50000-100000,Secondary,Consultant,married,62023,Full-time
+Nso_00046,60,F,Karnataka,50000-100000,Secondary,Teacher,Single,54864,Full-time
+Nso_00047,21,male,West Bengal,50000-100000,Graduate,Technician,Widowed,38200,Full-time
+Nso_00048,62,Female,Gujarat,50000-100000,Doctorate,Manager,S,126465,Full-time
+Nso_00049,63,Other,Maharashtra,50000-100000,Postgraduate,Doctor,Married,109926,Full-time
+Nso_00050,54,F,Karnataka,50000-100000,Secondary,Doctor,D,49024,Full-time
+Nso_00051,22,male,Karnataka,50000-100000,Postgraduate,Analyst,W,108398,Full-time
+Nso_00052,58,male,Telangana,50000-100000,Secondary,Analyst,S,89971,Full-time
+Nso_00053,43,female,Delhi,50000-100000,Graduate,Consultant,Married,77225,Full-time
+Nso_00054,,F,Delhi,50000-100000,Postgraduate,Consultant,single,52927,Full-time
+Nso_00055,61,Male,Uttar Pradesh,50000-100000,Doctorate,Technician,W,92900,Full-time
+Nso_00056,52,male,Delhi,50000-100000,Secondary,Engineer,single,116717,Full-time
+Nso_00057,56,Female,Delhi,50000-100000,Doctorate,Manager,single,30244,Full-time
+Nso_00058,34,F,West Bengal,50000-100000,Graduate,Doctor,married,65622,Full-time
+Nso_00059,33,Male,Tamil Nadu,50000-100000,Doctorate,Manager,Married,112113,Full-time
+Nso_00060,28,M,Uttar Pradesh,50000-100000,Doctorate,Technician,married,93619,Full-time
+Nso_00061,30,Male,Maharashtra,50000-100000,Doctorate,Manager,single,72897,Full-time
+Nso_00062,26,male,Karnataka,50000-100000,Diploma,Manager,D,54086,Full-time
+Nso_00063,24,Other,Tamil Nadu,50000-100000,Graduate,Teacher,Married,69464,Full-time
+Nso_00064,68,Male,Karnataka,50000-100000,Doctorate,Manager,W,112475,Full-time
+Nso_00065,41,male,Gujarat,50000-100000,Diploma,Consultant,W,72901,Full-time
+Nso_00066,52,M,Karnataka,50000-100000,Postgraduate,Teacher,W,94279,Full-time
+Nso_00067,56,F,West Bengal,50000-100000,Doctorate,Engineer,Widowed,119491,Full-time
+Nso_00068,22,M,Gujarat,50000-100000,Postgraduate,Analyst,Married,40584,Full-time
+Nso_00069,23,Female,Maharashtra,50000-100000,Diploma,Consultant,Single,129856,Full-time
+Nso_00070,47,male,Gujarat,50000-100000,Graduate,Doctor,Married,101322,Full-time
+Nso_00071,40,Female,Gujarat,50000-100000,Secondary,Teacher,single,113490,Full-time
+Nso_00072,47,male,Maharashtra,50000-100000,Graduate,Analyst,M,80748,Full-time
+Nso_00073,65,male,Delhi,50000-100000,Doctorate,Analyst,W,42640,Full-time
+Nso_00074,37,Male,Uttar Pradesh,50000-100000,Secondary,Engineer,Widowed,81807,Full-time
+Nso_00075,31,Male,Karnataka,50000-100000,Graduate,Teacher,Divorced,33713,Full-time
+Nso_00076,53,Other,Maharashtra,50000-100000,Secondary,Artist,Married,79084,Full-time
+Nso_00077,64,male,Tamil Nadu,50000-100000,Graduate,Artist,S,43540,Full-time
+Nso_00078,30,female,Karnataka,50000-100000,Secondary,Consultant,married,99737,Full-time
+Nso_00079,24,M,Karnataka,50000-100000,Doctorate,Analyst,M,103082,Full-time
+Nso_00080,49,F,Karnataka,50000-100000,Graduate,Technician,single,65029,Full-time
+Nso_00081,44,M,Karnataka,50000-100000,Doctorate,Teacher,Single,87248,Full-time
+Nso_00082,35,Female,Telangana,50000-100000,Doctorate,Manager,W,110478,Full-time
+Nso_00083,55,Female,Tamil Nadu,50000-100000,Postgraduate,Engineer,Divorced,122664,Full-time
+Nso_00084,64,male,Karnataka,50000-100000,Doctorate,Manager,married,113663,Full-time
+Nso_00085,56,M,Gujarat,50000-100000,Doctorate,Artist,D,111293,Full-time
+Nso_00086,22,Male,Tamil Nadu,50000-100000,Graduate,Teacher,married,129631,Full-time
+Nso_00087,24,male,Telangana,50000-100000,Postgraduate,Engineer,married,128006,Full-time
+Nso_00088,62,male,Maharashtra,50000-100000,Postgraduate,Artist,W,99818,Full-time
+Nso_00089,36,Female,Uttar Pradesh,50000-100000,Secondary,Teacher,Single,59629,Full-time
+Nso_00090,58,Other,Delhi,50000-100000,Graduate,Doctor,Single,49317,Full-time
+Nso_00091,56,Other,Maharashtra,50000-100000,Secondary,Manager,W,94317,Full-time
+Nso_00092,23,F,Maharashtra,50000-100000,Diploma,Doctor,single,84222,Full-time
+Nso_00093,56,Female,Delhi,50000-100000,Secondary,Engineer,Single,53799,Full-time
+Nso_00094,26,Female,West Bengal,50000-100000,Diploma,Teacher,Widowed,30319,Full-time
+Nso_00095,49,male,Maharashtra,50000-100000,Doctorate,Technician,Widowed,82262,Full-time
+Nso_00096,Unknown,M,Karnataka,50000-100000,Secondary,Technician,W,31509,Full-time
+Nso_00097,46,female,Maharashtra,50000-100000,Graduate,Analyst,W,115608,Full-time
+Nso_00098,65,Male,Delhi,50000-100000,Graduate,Teacher,D,47518,Full-time
+Nso_00099,48,Male,West Bengal,50000-100000,Diploma,Engineer,Widowed,73732,Full-time
+Nso_00100,24,F,Karnataka,50000-100000,Secondary,Teacher,Single,70452,Full-time

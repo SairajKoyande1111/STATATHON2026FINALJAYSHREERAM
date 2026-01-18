@@ -1,0 +1,39 @@
+# SafeData Pipeline: Risk Assessment Guide
+
+## 1. Configuration Parameters
+These settings define how the privacy risk assessment is conducted:
+
+- **Select Dataset:** Choose the data file you want to analyze for privacy vulnerabilities.
+- **Quasi-Identifiers:** Attributes that don't directly name a person but can be used to identify them when combined (e.g., Age, Gender, State). Selecting more quasi-identifiers typically increases re-identification risk.
+- **Sensitive Attributes:** The private information you want to protect (e.g., medical diagnosis, salary). The goal is to ensure these cannot be linked back to specific individuals.
+- **K-Anonymity Threshold (k):** Your target safety level. A threshold of 'k' means you want every person in the dataset to be hidden in a group of at least 'k' individuals with identical quasi-identifiers.
+- **Sample Size:** The percentage of the dataset to analyze. Larger samples provide more accurate assessments but take longer to process.
+
+## 2. Attack Scenarios
+The system simulates three common methods used by attackers to re-identify individuals:
+
+### Prosecutor Attack
+- **Scenario:** The attacker knows for certain that a specific target person is in the dataset.
+- **Risk Calculation:** Based on how unique that person's attributes are. If they are the only person with their specific combination of Age, Gender, and State, the risk is 100%.
+
+### Journalist Attack
+- **Scenario:** The attacker is exploring the dataset without knowing if a specific person is included. They attempt to match records against public registries (like social media or voter lists).
+- **Risk Calculation:** Generally lower than a Prosecutor attack because the attacker is less certain the target is even present in the data.
+
+### Marketer Attack
+- **Scenario:** The attacker aims to re-identify as many people as possible in bulk to build a marketing list or profile database.
+- **Risk Calculation:** Focuses on the success rate of matching large groups of records. Risk is often higher here as the attacker accepts some errors to achieve higher volume.
+
+## 3. Understanding Results & Metrics
+After running an assessment, these values tell you how "safe" your data is:
+
+- **Re-ID Risk (Re-Identification Risk):** The probability (0-100%) that an individual can be correctly identified. Higher percentages indicate higher danger.
+- **Success Rate:** The percentage of records that successfully meet your chosen protection level (e.g., how many records actually belong to a group of size 'k' or larger).
+- **Violations:** The count of individual records that failed to meet the safety threshold. These are your most vulnerable data points.
+- **Unique Records:** The number of individuals who have a completely unique combination of quasi-identifiers. These people are at the highest risk because they stand out perfectly in the crowd.
+
+## 4. The Privacy-Utility Trade-off
+Privacy protection always involves a balance:
+- **High Privacy:** Lower risk scores, but data might be less accurate (e.g., using "Age 20-30" instead of "Age 28").
+- **High Utility:** Very accurate data, but higher risk of someone being identified.
+Use these metrics to find the right balance for your specific needs.

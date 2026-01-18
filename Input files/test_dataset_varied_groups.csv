@@ -1,0 +1,21 @@
+Record_ID,Age,Gender,State,Income_Bracket,Education_Level,Occupation,Marital_Status,Income_Amount,Employment_Type
+TEST_001,28,Male,Maharashtra,25000-50000,Graduate,Engineer,Single,35000,Full-Time
+TEST_002,28,Male,Maharashtra,25000-50000,PostGraduate,Doctor,Single,45000,Full-Time
+TEST_003,28,Male,Maharashtra,25000-50000,Diploma,Technician,Single,32000,Full-Time
+TEST_004,28,Male,Maharashtra,25000-50000,Graduate,Clerk,Single,28000,Full-Time
+TEST_005,35,Female,Karnataka,50000-100000,Graduate,Engineer,Married,75000,Full-Time
+TEST_006,35,Female,Karnataka,50000-100000,PostGraduate,Manager,Married,95000,Full-Time
+TEST_007,35,Female,Karnataka,50000-100000,Graduate,Accountant,Married,72000,Full-Time
+TEST_008,42,Male,Delhi,100000-150000,Graduate,Director,Married,120000,Full-Time
+TEST_009,42,Male,Delhi,100000-150000,PostGraduate,Architect,Married,118000,Full-Time
+TEST_010,31,Female,Tamil Nadu,50000-100000,Graduate,Teacher,Married,65000,Full-Time
+TEST_011,25,Other,Telangana,25000-50000,Diploma,Technician,Single,35000,Full-Time
+TEST_012,38,Male,West Bengal,50000-100000,Graduate,Accountant,Married,72000,Full-Time
+TEST_013,29,Female,Gujarat,50000-100000,PostGraduate,Analyst,Single,58000,Full-Time
+TEST_014,45,Male,Uttar Pradesh,100000-150000,Graduate,Director,Married,135000,Full-Time
+TEST_015,32,Female,Rajasthan,25000-50000,Graduate,Nurse,Married,40000,Full-Time
+TEST_016,26,Male,Odisha,25000-50000,Diploma,Mechanic,Single,32000,Full-Time
+TEST_017,36,Female,Punjab,50000-100000,Graduate,Consultant,Married,80000,Full-Time
+TEST_018,41,Male,Haryana,100000-150000,PostGraduate,Architect,Married,118000,Full-Time
+TEST_019,27,Female,Madhya Pradesh,25000-50000,Graduate,Clerk,Single,38000,Full-Time
+TEST_020,33,Male,Uttarakhand,50000-100000,Diploma,Driver,Married,48000,Full-Time

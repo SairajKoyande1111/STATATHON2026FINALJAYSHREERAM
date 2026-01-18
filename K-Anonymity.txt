@@ -1,0 +1,29 @@
+K-ANONYMITY CONFIGURATION GUIDE
+
+1. MEANING OF THE OPTIONS
+
+* K Value (e.g., 5):
+    - What it is: This ensures that any person in your dataset cannot be distinguished from at least k-1 other people.
+    - Impact: If you set k=5, every row in your output will belong to a group of at least 5 identical-looking records. A higher k means better privacy but more data loss.
+
+* Suppression Limit (e.g., 10%):
+    - What it is: This tells the system how many rows it is allowed to completely delete if they are too unique to be anonymized easily.
+    - Impact: If a record is an "outlier", the system will delete it rather than ruining the rest of the data. 10% is a standard balanced setting.
+
+* Method:
+    - Global Recoding (Default): Applies the same change to a column everywhere (e.g., turning all ages into ranges). Most consistent and recommended.
+    - Local Recoding: Only masks specific cells that are risky. Keeps more data but looks "patchy."
+    - Clustering-based: Groups similar records together first. Best for purely numeric data.
+
+2. WHAT RESULT TO EXPECT
+After applying K-Anonymity:
+- Quasi-Identifiers (Age, Gender, State) will be generalized (e.g., 35 becomes 30-40).
+- Unique Records that couldn't be grouped will be removed.
+- Safety Score will reflect how well the individuals are hidden.
+
+3. RECOMMENDED TEST SCENARIO (Using test_inconsistent_data_100.csv)
+- Select Columns: Age, Gender, State
+- K Value: 5
+- Suppression Limit: 10%
+- Method: Global Recoding
+- Result: You should see generalized Age values and an Output count slightly less than 100.

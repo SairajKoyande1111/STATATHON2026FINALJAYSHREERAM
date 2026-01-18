@@ -1,0 +1,31 @@
+Record_ID,Age,Gender,State,Income_Bracket,Education_Level,Occupation,Marital_Status,Income_Amount,Employment_Type
+NSO_00001,35,Male,Maharashtra,50000-100000,Graduate,Engineer,Married,75000,Full-Time
+NSO_00002,28,Female,Karnataka,25000-50000,PostGraduate,Doctor,Single,45000,Full-Time
+NSO_00003,45,Male,Delhi,100000-150000,Graduate,Manager,Married,120000,Full-Time
+NSO_00004,32,Female,Tamil_Nadu,50000-100000,Intermediate,Teacher,Married,65000,Full-Time
+NSO_00005,27,Male,Maharashtra,25000-50000,Graduate,Analyst,Single,40000,Full-Time
+NSO_00006,38,Female,Bangalore,75000-125000,PostGraduate,Consultant,Married,95000,Full-Time
+NSO_00007,42,Male,Kerala,50000-100000,Graduate,Accountant,Married,70000,Full-Time
+NSO_00008,29,Female,Delhi,25000-50000,Diploma,Nurse,Single,35000,Full-Time
+NSO_00009,36,Male,Gujarat,100000-150000,Graduate,Director,Married,130000,Full-Time
+NSO_00010,31,Female,Maharashtra,50000-100000,Graduate,Software Developer,Single,80000,Full-Time
+NSO_00011,41,Male,Tamil_Nadu,50000-100000,Intermediate,Supervisor,Married,60000,Full-Time
+NSO_00012,26,Female,Karnataka,25000-50000,Graduate,Junior Analyst,Single,32000,Full-Time
+NSO_00013,39,Male,Delhi,75000-125000,PostGraduate,Senior Manager,Married,105000,Full-Time
+NSO_00014,33,Female,Maharashtra,50000-100000,Graduate,Project Lead,Married,85000,Full-Time
+NSO_00015,44,Male,Bangalore,100000-150000,Graduate,Architect,Married,125000,Full-Time
+NSO_00016,28,Female,Kerala,25000-50000,Diploma,Technician,Single,30000,Full-Time
+NSO_00017,37,Male,Gujarat,75000-125000,PostGraduate,Scientist,Married,100000,Full-Time
+NSO_00018,30,Female,Tamil_Nadu,50000-100000,Graduate,Executive,Married,75000,Full-Time
+NSO_00019,43,Male,Maharashtra,100000-150000,Graduate,VP Operations,Married,140000,Full-Time
+NSO_00020,25,Female,Delhi,25000-50000,Graduate,Intern,Single,28000,Full-Time
+NSO_00021,36,Male,Bangalore,50000-100000,Graduate,Sr. Developer,Married,90000,Full-Time
+NSO_00022,29,Female,Maharashtra,50000-100000,PostGraduate,Research Scientist,Single,82000,Full-Time
+NSO_00023,47,Male,Karnataka,100000-150000,Intermediate,Plant Manager,Married,115000,Full-Time
+NSO_00024,32,Female,Delhi,50000-100000,Graduate,HR Manager,Married,70000,Full-Time
+NSO_00025,38,Male,Kerala,75000-125000,Graduate,Senior Engineer,Married,110000,Full-Time
+NSO_00026,27,Female,Gujarat,25000-50000,Diploma,Data Entry,Single,25000,Full-Time
+NSO_00027,41,Male,Maharashtra,50000-100000,Graduate,Sales Manager,Married,77000,Full-Time
+NSO_00028,34,Female,Tamil_Nadu,75000-125000,PostGraduate,Finance Manager,Married,98000,Full-Time
+NSO_00029,39,Male,Bangalore,50000-100000,Graduate,Quality Assurance,Married,72000,Full-Time
+NSO_00030,26,Female,Delhi,25000-50000,Graduate,Content Writer,Single,33000,Full-Time

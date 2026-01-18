@@ -1,0 +1,16 @@
+T-Closeness Algorithm Explanation
+===============================
+
+Overview:
+T-Closeness is a privacy enhancement technique that refines L-Diversity. While L-Diversity ensures diversity in sensitive attributes, it doesn't protect against attribute disclosure if the distribution of those values is skewed. T-Closeness requires that the distribution of a sensitive attribute in any equivalence class be "close" to the distribution of the attribute in the entire dataset.
+
+Logic:
+1.  Partitioning: The dataset is partitioned into equivalence classes based on quasi-identifiers (e.g., Age, Gender, Zip).
+2.  Distribution Comparison: For each equivalence class, the distribution of the sensitive attribute (e.g., Disease) is calculated.
+3.  Distance Metric (EMD): The Earth Mover's Distance (EMD) is used to measure the distance between the local distribution (within the group) and the global distribution (entire dataset).
+4.  Threshold (T): A threshold 't' is set. If the distance is greater than 't', the group violates T-Closeness.
+5.  Transformation: In this implementation, violating records are generalized (Age -> range, etc.) to blur the connection, rather than just being suppressed, to maintain data utility.
+
+Benefits:
+- Prevents "Skewness Attacks" where a group has a high frequency of a specific sensitive value.
+- Prevents "Similarity Attacks" where sensitive values in a group are semantically similar.
