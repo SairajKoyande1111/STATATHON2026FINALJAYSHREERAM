@@ -74,41 +74,35 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header with 4 Balanced Sections */}
-      <header className="w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-3 px-8">
-        <div className="flex items-center justify-between w-full gap-2">
+      <header className="w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-4 px-8">
+        <div className="flex items-center justify-between w-full gap-8">
           {/* Section 1: MoSPI */}
-          <div className="flex-1 flex items-center justify-center gap-4">
-            <img src={mospiLogo} alt="MoSPI" className="h-16 w-auto" />
+          <div className="flex-1 flex items-center justify-center gap-4 border-r pr-8">
+            <img src={mospiLogo} alt="MoSPI" className="h-16 w-auto object-contain" />
             <div className="flex flex-col">
-              <span className="text-[10px] font-normal text-[#111827] dark:text-white leading-tight font-sans uppercase">GOVERNMENT OF INDIA</span>
-              <span className="text-[13px] font-bold text-[#111827] dark:text-white leading-tight font-sans">Ministry of Statistics and</span>
-              <span className="text-[13px] font-bold text-[#111827] dark:text-white leading-tight font-sans">Programme Implementation</span>
+              <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight font-sans uppercase">GOVERNMENT OF INDIA</span>
+              <span className="text-[14px] font-bold text-slate-900 dark:text-white leading-tight font-sans">Ministry of Statistics and</span>
+              <span className="text-[14px] font-bold text-slate-900 dark:text-white leading-tight font-sans">Programme Implementation</span>
             </div>
           </div>
-
-          <div className="h-12 w-[1px] bg-slate-200 dark:bg-slate-700" />
 
           {/* Section 2: Ministry of Education */}
-          <div className="flex-1 flex items-center justify-center gap-4">
-            <img src={mospiLogo} alt="MoE" className="h-16 w-auto" />
+          <div className="flex-1 flex items-center justify-center gap-4 border-r pr-8">
+            <img src={moeLogo} alt="MoE" className="h-16 w-auto object-contain" />
             <div className="flex flex-col">
-              <span className="text-[10px] font-normal text-[#111827] dark:text-white leading-tight font-sans uppercase">GOVERNMENT OF INDIA</span>
-              <span className="text-[13px] font-bold text-[#111827] dark:text-white leading-tight font-sans">Ministry of Education</span>
+              <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight font-sans uppercase">GOVERNMENT OF INDIA</span>
+              <span className="text-[14px] font-bold text-slate-900 dark:text-white leading-tight font-sans">Ministry of Education</span>
             </div>
           </div>
 
-          <div className="h-12 w-[1px] bg-slate-200 dark:bg-slate-700" />
-
           {/* Section 3: Innovation Cell */}
-          <div className="flex-1 flex items-center justify-center gap-4">
-            <img src={innovationCellLogo} alt="Innovation Cell" className="h-16 w-auto" />
+          <div className="flex-1 flex items-center justify-center gap-4 border-r pr-8">
+            <img src={innovationCellLogo} alt="Innovation Cell" className="h-16 w-auto object-contain" />
           </div>
-
-          <div className="h-12 w-[1px] bg-slate-200 dark:bg-slate-700" />
 
           {/* Section 4: Statathon */}
           <div className="flex-1 flex items-center justify-center">
-            <img src={statathonLogo} alt="Statathon 2025" className="h-[72px] w-auto max-h-[72px]" />
+            <img src={statathonLogo} alt="Statathon 2025" className="h-16 w-auto object-contain" />
           </div>
         </div>
       </header>

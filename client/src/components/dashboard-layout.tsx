@@ -36,28 +36,32 @@ export function DashboardLayout({ children, title, breadcrumbs = [] }: Dashboard
       <div className="flex min-h-screen w-full">
         <AppSidebar />
         <SidebarInset className="flex flex-col flex-1">
-          <header className="sticky top-0 z-50 flex h-24 items-center gap-4 border-b bg-background px-6">
+          <header className="sticky top-0 z-50 flex h-24 items-center gap-4 border-b bg-white dark:bg-slate-900 px-6">
             <div className="flex items-center gap-4 flex-1 h-full py-2">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <Separator orientation="vertical" className="h-10" />
               
               <div className="flex items-center gap-8 h-full">
                 {/* Section 1: MoSPI */}
-                <div className="flex items-center gap-3 border-r pr-8 h-full">
+                <div className="flex items-center gap-3 border-r border-slate-200 dark:border-slate-800 pr-8 h-full">
                   <img src={mospiLogo} alt="MoSPI Logo" className="h-14 w-auto object-contain" />
                   <div className="flex flex-col">
-                    <span className="text-[12px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Ministry of Statistics and</span>
-                    <span className="text-[12px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Programme Implementation</span>
+                    <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight uppercase">GOVERNMENT OF INDIA</span>
+                    <span className="text-[13px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Ministry of Statistics and</span>
+                    <span className="text-[13px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Programme Implementation</span>
                   </div>
                 </div>
 
                 {/* Section 2: MoE & Innovation Cell */}
-                <div className="flex items-center gap-6 border-r pr-8 h-full">
+                <div className="flex items-center gap-6 border-r border-slate-200 dark:border-slate-800 pr-8 h-full">
                   <div className="flex items-center gap-3">
                     <img src={moeLogo} alt="MoE Logo" className="h-14 w-auto object-contain" />
-                    <span className="text-[12px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Ministry of<br/>Education</span>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight uppercase">GOVERNMENT OF INDIA</span>
+                      <span className="text-[13px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Ministry of Education</span>
+                    </div>
                   </div>
-                  <div className="h-10 w-px bg-border" />
+                  <div className="h-10 w-px bg-slate-200 dark:bg-slate-800" />
                   <img src={innovationCellLogo} alt="Innovation Cell" className="h-14 w-auto object-contain" />
                 </div>
 
