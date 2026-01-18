@@ -40,11 +40,12 @@ const MospiLogo = ({ className }: { className?: string }) => (
     <img 
       src="https://www.mospi.gov.in/uploads/primaryLogo/primaryLogo-1dee0dd9-99fd-4b8f-a352-7a53e0655404.svg" 
       alt="MoSPI Logo" 
-      className="h-full w-full object-contain"
+      className="h-20 w-auto object-contain min-w-[120px]"
+      loading="eager"
       onError={(e) => {
         const target = e.target as HTMLImageElement;
         target.onerror = null;
-        target.src = "https://www.mospi.gov.in/themes/mospi/images/logo.png";
+        target.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/1200px-Government_of_India_logo.svg.png";
       }}
     />
   </div>
