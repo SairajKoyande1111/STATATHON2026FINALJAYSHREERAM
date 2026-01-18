@@ -38,7 +38,7 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 const MospiLogo = ({ className }: { className?: string }) => (
   <div className={className}>
     <img 
-      src="https://www.mospi.gov.in/uploads/primaryLogo/primaryLogo-1dee0dd9-99fd-4b8f-a352-7a53e0655404.svg" 
+      src="https://www.mospi.gov.in/themes/mospi/images/logo.png" 
       alt="MoSPI Logo" 
       className="h-20 w-auto object-contain min-w-[120px]"
       loading="eager"
