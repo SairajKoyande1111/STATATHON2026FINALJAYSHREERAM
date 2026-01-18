@@ -35,22 +35,6 @@ const registerSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 type RegisterFormData = z.infer<typeof registerSchema>;
 
-const MospiLogo = ({ className }: { className?: string }) => (
-  <div className={className}>
-    <img 
-      src="https://www.mospi.gov.in/themes/mospi/images/logo.png" 
-      alt="MoSPI Logo" 
-      className="h-20 w-auto object-contain min-w-[120px]"
-      loading="eager"
-      onError={(e) => {
-        const target = e.target as HTMLImageElement;
-        target.onerror = null;
-        target.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/1200px-Government_of_India_logo.svg.png";
-      }}
-    />
-  </div>
-);
-
 export default function AuthPage() {
   const [, setLocation] = useLocation();
   const { user, loginMutation, registerMutation } = useAuth();
@@ -91,7 +75,6 @@ export default function AuthPage() {
       <header className="relative z-50 w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-4 px-8">
         <div className="flex items-center justify-between w-full gap-8 overflow-visible">
           <div className="flex-1 flex items-center justify-center gap-4 border-r pr-8 overflow-visible">
-            <MospiLogo className="h-20 w-auto min-w-[80px]" />
             <div className="flex flex-col">
               <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight font-sans uppercase">GOVERNMENT OF INDIA</span>
               <span className="text-[14px] font-bold text-slate-900 dark:text-white leading-tight font-sans">Ministry of Statistics and</span>
@@ -100,16 +83,6 @@ export default function AuthPage() {
           </div>
 
           <div className="flex-1 flex items-center justify-center gap-4 border-r pr-8 overflow-visible">
-            <img 
-              src="https://www.education.gov.in/sites/all/themes/moe/images/logo.png" 
-              alt="MoE Logo" 
-              className="h-20 w-auto object-contain min-w-[80px]"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.onerror = null;
-                target.src = "https://www.education.gov.in/sites/default/files/logo_0.png";
-              }}
-            />
             <div className="flex flex-col">
               <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight font-sans uppercase">GOVERNMENT OF INDIA</span>
               <span className="text-[14px] font-bold text-slate-900 dark:text-white leading-tight font-sans">Ministry of Education</span>

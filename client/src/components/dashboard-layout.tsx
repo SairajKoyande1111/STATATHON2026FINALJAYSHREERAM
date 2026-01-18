@@ -18,22 +18,6 @@ import moeLogo from "@assets/moe_logo.png";
 import statathonLogo from "@assets/statathon_logo.png";
 import innovationCellLogo from "@assets/innovation_cell_logo.png";
 
-const MospiLogo = ({ className }: { className?: string }) => (
-  <div className={className}>
-    <img 
-      src="https://www.mospi.gov.in/themes/mospi/images/logo.png" 
-      alt="MoSPI Logo" 
-      className="h-14 w-auto object-contain min-w-[100px]"
-      loading="eager"
-      onError={(e) => {
-        const target = e.target as HTMLImageElement;
-        target.onerror = null;
-        target.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/1200px-Government_of_India_logo.svg.png";
-      }}
-    />
-  </div>
-);
-
 interface DashboardLayoutProps {
   children: ReactNode;
   title: string;
@@ -58,7 +42,6 @@ export function DashboardLayout({ children, title, breadcrumbs = [] }: Dashboard
               
               <div className="flex items-center gap-8 h-full overflow-visible">
                 <div className="flex items-center gap-3 border-r border-slate-200 dark:border-slate-800 pr-8 h-full overflow-visible">
-                  <MospiLogo className="h-14 w-14 min-w-[56px]" />
                   <div className="flex flex-col">
                     <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight uppercase">GOVERNMENT OF INDIA</span>
                     <span className="text-[13px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Ministry of Statistics and</span>
@@ -68,16 +51,6 @@ export function DashboardLayout({ children, title, breadcrumbs = [] }: Dashboard
 
                 <div className="flex items-center gap-6 border-r border-slate-200 dark:border-slate-800 pr-8 h-full overflow-visible">
                   <div className="flex items-center gap-3">
-                    <img 
-                      src="https://www.education.gov.in/sites/all/themes/moe/images/logo.png" 
-                      alt="MoE Logo" 
-                      className="h-14 w-auto object-contain min-w-[56px]"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.onerror = null;
-                        target.src = "https://www.education.gov.in/sites/default/files/logo_0.png";
-                      }}
-                    />
                     <div className="flex flex-col">
                       <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight uppercase">GOVERNMENT OF INDIA</span>
                       <span className="text-[13px] font-bold leading-tight uppercase text-slate-900 dark:text-white">Ministry of Education</span>
