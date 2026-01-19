@@ -236,23 +236,23 @@ export default function AuthPage() {
       </div>
 
       <footer className="w-full py-2 text-center border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 z-50">
-        <div className="flex items-center justify-center space-x-2 text-[10px] md:text-xs text-slate-500 dark:text-slate-400 px-4">
+        <div className="flex items-center justify-center space-x-2 text-xs md:text-sm text-black px-4">
           <span className="font-medium whitespace-nowrap">
-            Developed by <span className="text-slate-900 dark:text-white font-bold">AIRAVATA TECHNOLOGIES</span>
+            Developed by <a href="https://www.airavatatechnologies.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 font-bold hover:underline">AIRAVATA TECHNOLOGIES</a>
           </span>
-          <span className="text-slate-300 dark:text-slate-700">|</span>
+          <span className="text-black font-bold">|</span>
           <a 
             href="https://www.airavatatechnologies.com/" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="hover:text-primary transition-colors underline underline-offset-4 whitespace-nowrap"
+            className="text-black hover:text-blue-600 transition-colors underline underline-offset-4 whitespace-nowrap font-medium"
           >
             www.airavatatechnologies.com
           </a>
-          <span className="text-slate-300 dark:text-slate-700">|</span>
+          <span className="text-black font-bold">|</span>
           <a 
             href="mailto:info@airavatatechnologies.com" 
-            className="hover:text-primary transition-colors underline underline-offset-4 whitespace-nowrap"
+            className="text-black hover:text-blue-600 transition-colors underline underline-offset-4 whitespace-nowrap font-medium"
           >
             info@airavatatechnologies.com
           </a>
