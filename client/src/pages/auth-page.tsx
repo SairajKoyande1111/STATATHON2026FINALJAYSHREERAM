@@ -11,6 +11,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Shield, Lock, Database, FileCheck, BarChart3, Loader2 } from "lucide-react";
 import backgroundImage from "@assets/background.jpg";
+import moeLogo from "@assets/moe_logo.png";
+import statathonLogo from "@assets/statathon_logo.png";
+import innovationCellLogo from "@assets/innovation_cell_logo.png";
+import airavataLogo from "@assets/airavata_logo.png";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
