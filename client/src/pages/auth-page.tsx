@@ -64,8 +64,8 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background relative pb-12">
-      <header className="relative z-50 w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-4 px-8">
+    <div className="h-screen flex flex-col bg-background relative overflow-hidden">
+      <header className="relative z-50 w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-4 px-8 shrink-0">
         <div className="flex items-center justify-between w-full gap-8 overflow-visible">
           <div className="flex-1 flex items-center justify-center gap-4 border-r pr-8 overflow-visible">
             <img src="/attached_assets/Government_of_India_logo.svg" alt="Government of India" className="h-20 w-auto object-contain" style={{ display: 'block' }} />
@@ -235,8 +235,8 @@ export default function AuthPage() {
         </div>
       </div>
 
-      <footer className="absolute bottom-0 left-0 right-0 py-4 text-center border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm">
-        <div className="flex flex-col items-center justify-center space-y-1 text-sm text-slate-500 dark:text-slate-400">
+      <footer className="w-full py-3 text-center border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm shrink-0">
+        <div className="flex flex-col items-center justify-center space-y-1 text-xs text-slate-500 dark:text-slate-400">
           <p className="font-medium">
             Developed by <span className="text-slate-900 dark:text-white font-bold">AIRAVATA TECHNOLOGIES</span>
           </p>
