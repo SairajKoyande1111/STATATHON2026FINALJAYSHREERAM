@@ -91,10 +91,10 @@ export default function AuthPage() {
             <img 
               src="/sih-logo.png" 
               alt="SIH 2024" 
-              className="h-12 w-auto object-contain mb-1"
+              className="h-20 w-auto object-contain mb-2"
             />
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">SIH1693</span>
-            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-tighter">SIH 2024 WINNER</span>
+            <span className="text-lg font-bold text-slate-500 dark:text-slate-400">SIH1693</span>
+            <span className="text-sm font-bold text-orange-600 dark:text-orange-400 uppercase tracking-tight">SIH 2024 WINNER</span>
           </div>
           <div className="w-full max-w-md space-y-0">
             <div className="text-center space-y-0">
