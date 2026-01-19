@@ -87,19 +87,19 @@ export default function AuthPage() {
 
       <div className="flex-1 flex flex-col lg:flex-row h-full">
         <div className="flex-1 flex flex-col items-center justify-start pt-0 p-8 bg-white dark:bg-slate-900 overflow-visible">
-          <div className="w-full max-w-md space-y-0 -mt-20">
+          <div className="w-full max-w-md space-y-0 -mt-12">
             <div className="text-center space-y-0">
               <div className="flex flex-col items-center justify-center">
                 <img 
                   src="/attached_assets/airavata_logo_large.png" 
                   alt="AIRAVATA" 
-                  className="h-[400px] w-auto object-contain" 
+                  className="h-[280px] w-auto object-contain" 
                   data-testid="img-airavata-logo"
                 />
               </div>
             </div>
             
-            <div className="bg-white dark:bg-slate-900 p-2 -mt-10">
+            <div className="bg-white dark:bg-slate-900 p-2 -mt-4">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                   <TabsTrigger value="login" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">Login</TabsTrigger>
