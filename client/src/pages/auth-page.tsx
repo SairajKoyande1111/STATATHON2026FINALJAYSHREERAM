@@ -85,8 +85,8 @@ export default function AuthPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col lg:flex-row h-full">
-        <div className="flex-1 flex flex-col items-center justify-start pt-8 p-8 bg-white dark:bg-slate-900 overflow-visible">
+      <div className="flex-1 flex flex-col lg:flex-row-reverse h-full">
+        <div className="flex-1 flex flex-col items-center justify-start pt-8 p-8 bg-white dark:bg-slate-900 overflow-visible lg:border-l lg:border-slate-200 lg:dark:border-slate-800">
           <div className="w-full max-w-md space-y-0">
             <div className="text-center space-y-0">
               <div className="flex flex-col items-center justify-center">
@@ -196,7 +196,7 @@ export default function AuthPage() {
           </div>
         </div>
 
-        <div className="hidden lg:flex flex-1 items-center justify-center p-12 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800">
+        <div className="hidden lg:flex flex-1 items-center justify-center p-12 bg-white dark:bg-slate-900">
           <div className="max-w-2xl text-slate-900 dark:text-white w-full">
             <div className="flex flex-col items-center text-center mb-12">
               <img 
