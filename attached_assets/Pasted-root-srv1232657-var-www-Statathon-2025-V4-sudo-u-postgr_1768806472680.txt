@@ -1,0 +1,58 @@
+root@srv1232657:/var/www/Statathon-2025-V4# sudo -u postgres psql
+psql (17.7 (Ubuntu 17.7-0ubuntu0.25.10.1))
+Type "help" for help.
+
+postgres=# \c airavata_db
+You are now connected to database "airavata_db" as user "postgres".
+airavata_db=# ALTER SCHEMA public OWNER TO airavata_user;
+ALTER SCHEMA
+airavata_db=# GRANT ALL ON SCHEMA public TO airavata_user;
+GRANT ALL PRIVILEGES ON DATABASE airavata_db TO airavata_user;
+GRANT
+GRANT
+airavata_db=# \q
+root@srv1232657:/var/www/Statathon-2025-V4# DATABASE_URL="postgres://airavata_user:your_secure_password@localhost:5432/airavata_db" npm run db:push
+
+> rest-express@1.0.0 db:push
+> drizzle-kit push
+
+No config path provided, using default 'drizzle.config.ts'
+Reading config file '/var/www/Statathon-2025-V4/drizzle.config.ts'
+Using 'pg' driver for database querying
+[✓] Pulling schema from database...
+[✓] Changes applied
+root@srv1232657:/var/www/Statathon-2025-V4# pm2 list
+┌────┬──────────────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                         │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼──────────────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 3  │ DM-pos                       │ default     │ 1.0.0   │ fork    │ 25708    │ 19D    │ 700  │ online    │ 0%       │ 121.8mb  │ root     │ disabled │
+│ 12 │ airavata-app                 │ default     │ 1.0.0   │ fork    │ 138274   │ 11m    │ 2    │ online    │ 0%       │ 117.6mb  │ root     │ disabled │
+│ 1  │ airavatatechnologies-web     │ default     │ 1.0.0   │ fork    │ 12849    │ 20D    │ 1    │ online    │ 0%       │ 102.4mb  │ root     │ disabled │
+│ 9  │ barrelborn                   │ default     │ 1.0.0   │ fork    │ 121104   │ 2D     │ 7    │ online    │ 0%       │ 139.7mb  │ root     │ disabled │
+│ 10 │ bg-remover-portal            │ default     │ 1.0.0   │ fork    │ 100137   │ 7D     │ 0    │ online    │ 0%       │ 142.0mb  │ root     │ disabled │
+│ 6  │ portfolio-app                │ default     │ N/A     │ fork    │ 68714    │ 13D    │ 2    │ online    │ 0%       │ 76.3mb   │ root     │ disabled │
+│ 11 │ rest-express                 │ default     │ 1.0.0   │ fork    │ 108632   │ 5D     │ 1    │ online    │ 0%       │ 90.3mb   │ root     │ disabled │
+│ 0  │ restaurant-management-app    │ default     │ N/A     │ fork    │ 12465    │ 20D    │ 1    │ online    │ 0%       │ 76.6mb   │ root     │ disabled │
+│ 2  │ restaurant-pos               │ default     │ 1.0.0   │ cluster │ 17439    │ 19D    │ 2    │ online    │ 0%       │ 136.9mb  │ root     │ disabled │
+└────┴──────────────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+root@srv1232657:/var/www/Statathon-2025-V4# pm2 restart 12
+Use --update-env to update environment variables
+[PM2] Applying action restartProcessId on app [12](ids: [ '12' ])
+[PM2] [airavata-app](12) ✓
+┌────┬──────────────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                         │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼──────────────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 3  │ DM-pos                       │ default     │ 1.0.0   │ fork    │ 25708    │ 19D    │ 700  │ online    │ 0%       │ 121.7mb  │ root     │ disabled │
+│ 12 │ airavata-app                 │ default     │ 1.0.0   │ fork    │ 138625   │ 0s     │ 3    │ online    │ 0%       │ 10.6mb   │ root     │ disabled │
+│ 1  │ airavatatechnologies-web     │ default     │ 1.0.0   │ fork    │ 12849    │ 20D    │ 1    │ online    │ 0%       │ 102.7mb  │ root     │ disabled │
+│ 9  │ barrelborn                   │ default     │ 1.0.0   │ fork    │ 121104   │ 2D     │ 7    │ online    │ 0%       │ 139.2mb  │ root     │ disabled │
+│ 10 │ bg-remover-portal            │ default     │ 1.0.0   │ fork    │ 100137   │ 7D     │ 0    │ online    │ 0%       │ 141.8mb  │ root     │ disabled │
+│ 6  │ portfolio-app                │ default     │ N/A     │ fork    │ 68714    │ 13D    │ 2    │ online    │ 0%       │ 75.7mb   │ root     │ disabled │
+│ 11 │ rest-express                 │ default     │ 1.0.0   │ fork    │ 108632   │ 5D     │ 1    │ online    │ 0%       │ 90.3mb   │ root     │ disabled │
+│ 0  │ restaurant-management-app    │ default     │ N/A     │ fork    │ 12465    │ 20D    │ 1    │ online    │ 0%       │ 76.2mb   │ root     │ disabled │
+│ 2  │ restaurant-pos               │ default     │ 1.0.0   │ cluster │ 17439    │ 19D    │ 2    │ online    │ 0%       │ 137.5mb  │ root     │ disabled │
+└────┴──────────────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+root@srv1232657:/var/www/Statathon-2025-V4# pm2 save
+[PM2] Saving current process list...
+[PM2] Successfully saved in /root/.pm2/dump.pm2
+root@srv1232657:/var/www/Statathon-2025-V4#
