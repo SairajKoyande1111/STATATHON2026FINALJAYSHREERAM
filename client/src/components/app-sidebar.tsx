@@ -67,14 +67,12 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Shield className="h-6 w-6" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold">SafeData Pipeline</span>
-            <span className="text-xs text-muted-foreground">Privacy Protection</span>
-          </div>
+        <div className="flex items-center justify-center">
+          <img 
+            src="/airavata-icon.png" 
+            alt="AIRAVATA" 
+            className="h-12 w-auto object-contain"
+          />
         </div>
       </SidebarHeader>
 
@@ -125,29 +123,38 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-9 w-9">
-            <AvatarFallback className="bg-primary/10 text-primary text-sm">
-              {user ? getInitials(user.fullName) : "U"}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col flex-1 min-w-0">
-            <span className="text-sm font-medium truncate">
-              {user?.fullName || "User"}
-            </span>
-            <span className="text-xs text-muted-foreground truncate">
-              {user ? getRoleBadge(user.role) : ""}
-            </span>
+        <div className="flex flex-col gap-4">
+          <div className="flex justify-center px-2">
+            <img 
+              src="/mospi-footer-logo.png" 
+              alt="Ministry of Statistics" 
+              className="h-10 w-auto object-contain brightness-0 dark:brightness-100 invert-0 dark:invert"
+            />
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => logoutMutation.mutate()}
-            disabled={logoutMutation.isPending}
-            data-testid="button-logout"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-3">
+            <Avatar className="h-9 w-9">
+              <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                {user ? getInitials(user.fullName) : "U"}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col flex-1 min-w-0">
+              <span className="text-sm font-medium truncate">
+                {user?.fullName || "User"}
+              </span>
+              <span className="text-xs text-muted-foreground truncate">
+                {user ? getRoleBadge(user.role) : ""}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+              data-testid="button-logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>
