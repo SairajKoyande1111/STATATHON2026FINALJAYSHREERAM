@@ -56,12 +56,7 @@ export function AppSidebar() {
   };
 
   const getRoleBadge = (role: string) => {
-    const roleLabels: Record<string, string> = {
-      admin: "Administrator",
-      analyst: "Data Analyst",
-      officer: "Privacy Officer",
-    };
-    return roleLabels[role] || role;
+    return "Admin";
   };
 
   return (
@@ -124,11 +119,11 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         <div className="flex flex-col gap-4">
-          <div className="flex justify-center px-2">
+          <div className="flex justify-center">
             <img 
               src="/mospi-footer-logo.png" 
               alt="Ministry of Statistics" 
-              className="h-12 w-auto object-contain"
+              className="w-full h-auto object-contain"
             />
           </div>
           <div className="flex items-center gap-3">
