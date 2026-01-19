@@ -102,7 +102,7 @@ export default function AuthPage() {
                 <img 
                   src="/attached_assets/airavata_logo_large.png" 
                   alt="AIRAVATA" 
-                  className="h-[200px] w-auto object-contain" 
+                  className="h-[240px] w-auto object-contain" 
                   data-testid="img-airavata-logo"
                 />
               </div>
