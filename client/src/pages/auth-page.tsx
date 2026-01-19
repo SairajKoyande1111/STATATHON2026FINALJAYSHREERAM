@@ -11,11 +11,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Shield, Lock, Database, FileCheck, BarChart3, Loader2 } from "lucide-react";
 import backgroundImage from "@assets/background.jpg";
-import moeLogo from "@assets/moe_logo.png";
-import statathonLogo from "@assets/Screenshot_2026-01-19_at_9.37.15_AM_1768795639830.png";
-import innovationCellLogo from "@assets/innovation_cell_logo.png";
-import airavataLogo from "@assets/airavata_logo.png";
-
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
@@ -81,11 +76,11 @@ export default function AuthPage() {
           </div>
 
           <div className="flex-1 flex items-center justify-center gap-4 border-r pr-8 overflow-visible">
-            <img src={innovationCellLogo} alt="Innovation Cell" className="h-20 w-auto object-contain min-w-[140px]" />
+            <img src="/attached_assets/innovation_cell_logo.png" alt="Innovation Cell" className="h-20 w-auto object-contain min-w-[140px]" />
           </div>
 
           <div className="flex-1 flex items-center justify-center overflow-visible">
-            <img src={statathonLogo} alt="Statathon 2025" className="h-20 w-auto object-contain min-w-[180px]" />
+            <img src="/attached_assets/Screenshot_2026-01-19_at_9.37.15_AM_1768795639830.png" alt="Statathon 2025" className="h-20 w-auto object-contain min-w-[180px]" />
           </div>
         </div>
       </header>
@@ -95,7 +90,7 @@ export default function AuthPage() {
           <div className="w-full max-w-md space-y-8">
             <div className="text-center space-y-4">
               <div className="flex flex-col items-center justify-center gap-4">
-                <img src={airavataLogo} alt="AIRAVATA" className="h-24 w-auto" />
+                <img src="/attached_assets/airavata_logo.png" alt="AIRAVATA" className="h-24 w-auto" />
                 <span className="text-[36px] font-semibold tracking-widest text-slate-900 dark:text-white uppercase font-sans">AIRAVATA</span>
               </div>
             </div>

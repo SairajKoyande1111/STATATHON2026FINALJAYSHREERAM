@@ -15,8 +15,6 @@ import {
 } from "@/components/ui/breadcrumb";
 
 import moeLogo from "@assets/moe_logo.png";
-import statathonLogo from "@assets/Screenshot_2026-01-19_at_9.37.15_AM_1768795639830.png";
-import innovationCellLogo from "@assets/innovation_cell_logo.png";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -50,11 +48,11 @@ export function DashboardLayout({ children, title, breadcrumbs = [] }: Dashboard
                     <img src="/attached_assets/Ministry_of_Education_India.svg" alt="Ministry of Education" className="h-14 w-auto object-contain" />
                   </div>
                   <div className="h-10 w-px bg-slate-200 dark:bg-slate-800" />
-                  <img src={innovationCellLogo} alt="Innovation Cell" className="h-14 w-auto object-contain min-w-[100px]" />
+                  <img src="/attached_assets/innovation_cell_logo.png" alt="Innovation Cell" className="h-14 w-auto object-contain min-w-[100px]" />
                 </div>
 
                 <div className="flex items-center gap-2 h-full overflow-visible">
-                  <img src={statathonLogo} alt="Statathon Logo" className="h-14 w-auto object-contain min-w-[120px]" />
+                  <img src="/attached_assets/Screenshot_2026-01-19_at_9.37.15_AM_1768795639830.png" alt="Statathon Logo" className="h-14 w-auto object-contain min-w-[120px]" />
                 </div>
               </div>
             </div>
