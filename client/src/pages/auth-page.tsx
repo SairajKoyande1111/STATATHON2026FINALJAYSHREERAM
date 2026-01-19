@@ -196,33 +196,32 @@ export default function AuthPage() {
           </div>
         </div>
 
-        <div className="hidden lg:flex flex-1 items-center justify-center p-12 relative bg-cover bg-center" style={{ backgroundImage: `url(${backgroundImage})` }}>
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-900/95 via-slate-900/85 to-slate-900/60" style={{ zIndex: 1 }} />
-          <div className="max-w-2xl text-white relative z-10 w-full">
+        <div className="hidden lg:flex flex-1 items-center justify-center p-12 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800">
+          <div className="max-w-2xl text-slate-900 dark:text-white w-full">
             <div className="flex flex-col items-center text-center mb-12">
               <img 
                 src="/attached_assets/mospi_logo_large.png" 
                 alt="MoSPI Government of India" 
-                className="h-32 w-auto object-contain mb-8 bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20" 
+                className="h-32 w-auto object-contain mb-12" 
               />
               <div className="space-y-6 w-full">
-                <div className="p-6 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
-                  <div className="grid grid-cols-1 gap-4 text-left">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                      <span className="text-sky-300 font-medium uppercase tracking-wider text-sm">Team Name</span>
-                      <span className="text-2xl font-bold">AIRAVATA</span>
+                <div className="p-8 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <div className="grid grid-cols-1 gap-6 text-left">
+                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+                      <span className="text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider text-xs">Team Name</span>
+                      <span className="text-2xl font-bold text-slate-900 dark:text-white">AIRAVATA</span>
                     </div>
-                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                      <span className="text-sky-300 font-medium uppercase tracking-wider text-sm">Team ID</span>
-                      <span className="text-2xl font-bold">4208</span>
+                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+                      <span className="text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider text-xs">Team ID</span>
+                      <span className="text-2xl font-bold text-slate-900 dark:text-white">4208</span>
                     </div>
-                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                      <span className="text-sky-300 font-medium uppercase tracking-wider text-sm">Problem Statement ID</span>
-                      <span className="text-2xl font-bold">1</span>
+                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+                      <span className="text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider text-xs">Problem Statement ID</span>
+                      <span className="text-2xl font-bold text-slate-900 dark:text-white">1</span>
                     </div>
                     <div className="pt-2">
-                      <span className="text-sky-300 font-medium uppercase tracking-wider text-sm block mb-2">Problem Statement Title</span>
-                      <p className="text-xl font-semibold leading-relaxed text-white">
+                      <span className="text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider text-xs block mb-3">Problem Statement Title</span>
+                      <p className="text-xl font-semibold leading-relaxed text-slate-900 dark:text-white">
                         Evaluation of Effectiveness of Data Encryption and Anonymisation Adopted for Unit-level Data of NSS and Creation of an improved Safe Data Tool
                       </p>
                     </div>
