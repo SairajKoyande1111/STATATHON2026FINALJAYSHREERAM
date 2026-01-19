@@ -99,98 +99,100 @@ export default function AuthPage() {
               </div>
             </div>
             
-            <div className="bg-white dark:bg-slate-900 p-2">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+            <div className="bg-white dark:bg-slate-900 p-2 min-h-[400px]">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+                <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg shrink-0">
                   <TabsTrigger value="login" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">Login</TabsTrigger>
                   <TabsTrigger value="register" className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">Register</TabsTrigger>
                 </TabsList>
                 
-                <TabsContent value="login" className="mt-6">
-                  <Form {...loginForm}>
-                    <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-6">
-                      <FormField
-                        control={loginForm.control}
-                        name="username"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Username</FormLabel>
-                            <FormControl><Input placeholder="Username" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={loginForm.control}
-                        name="password"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Password</FormLabel>
-                            <FormControl><Input type="password" placeholder="Password" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <Button type="submit" className="w-full h-11" disabled={loginMutation.isPending}>
-                        {loginMutation.isPending ? <Loader2 className="animate-spin" /> : "Sign In"}
-                      </Button>
-                    </form>
-                  </Form>
-                </TabsContent>
+                <div className="flex-1 relative">
+                  <TabsContent value="login" className="mt-6 absolute inset-x-0 top-0 data-[state=inactive]:hidden">
+                    <Form {...loginForm}>
+                      <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-6">
+                        <FormField
+                          control={loginForm.control}
+                          name="username"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Username</FormLabel>
+                              <FormControl><Input placeholder="Username" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={loginForm.control}
+                          name="password"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Password</FormLabel>
+                              <FormControl><Input type="password" placeholder="Password" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button type="submit" className="w-full h-11" disabled={loginMutation.isPending}>
+                          {loginMutation.isPending ? <Loader2 className="animate-spin" /> : "Sign In"}
+                        </Button>
+                      </form>
+                    </Form>
+                  </TabsContent>
 
-                <TabsContent value="register" className="mt-6">
-                  <Form {...registerForm}>
-                    <form onSubmit={registerForm.handleSubmit(onRegister)} className="space-y-6">
-                      <FormField
-                        control={registerForm.control}
-                        name="fullName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Full Name</FormLabel>
-                            <FormControl><Input placeholder="Full Name" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={registerForm.control}
-                        name="email"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl><Input type="email" placeholder="Email" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={registerForm.control}
-                        name="username"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Username</FormLabel>
-                            <FormControl><Input placeholder="Username" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={registerForm.control}
-                        name="password"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Password</FormLabel>
-                            <FormControl><Input type="password" placeholder="Password" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <Button type="submit" className="w-full h-11" disabled={registerMutation.isPending}>
-                        {registerMutation.isPending ? <Loader2 className="animate-spin" /> : "Create Account"}
-                      </Button>
-                    </form>
-                  </Form>
-                </TabsContent>
+                  <TabsContent value="register" className="mt-6 absolute inset-x-0 top-0 data-[state=inactive]:hidden">
+                    <Form {...registerForm}>
+                      <form onSubmit={registerForm.handleSubmit(onRegister)} className="space-y-6">
+                        <FormField
+                          control={registerForm.control}
+                          name="fullName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Full Name</FormLabel>
+                              <FormControl><Input placeholder="Full Name" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={registerForm.control}
+                          name="email"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Email</FormLabel>
+                              <FormControl><Input type="email" placeholder="Email" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={registerForm.control}
+                          name="username"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Username</FormLabel>
+                              <FormControl><Input placeholder="Username" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={registerForm.control}
+                          name="password"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Password</FormLabel>
+                              <FormControl><Input type="password" placeholder="Password" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button type="submit" className="w-full h-11" disabled={registerMutation.isPending}>
+                          {registerMutation.isPending ? <Loader2 className="animate-spin" /> : "Create Account"}
+                        </Button>
+                      </form>
+                    </Form>
+                  </TabsContent>
+                </div>
               </Tabs>
             </div>
           </div>
