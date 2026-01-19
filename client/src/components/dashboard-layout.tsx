@@ -17,6 +17,8 @@ import {
 import moeLogo from "@assets/moe_logo.png";
 import statathonLogo from "@assets/statathon_logo.png";
 import innovationCellLogo from "@assets/innovation_cell_logo.png";
+import goiLogo from "@assets/Government_of_India_logo.svg";
+import moeIndiaLogo from "@assets/Ministry_of_Education_India.svg";
 
 interface DashboardLayoutProps {
   children: ReactNode;

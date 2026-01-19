@@ -15,6 +15,8 @@ import moeLogo from "@assets/moe_logo.png";
 import statathonLogo from "@assets/statathon_logo.png";
 import innovationCellLogo from "@assets/innovation_cell_logo.png";
 import airavataLogo from "@assets/airavata_logo.png";
+import goiLogo from "@assets/Government_of_India_logo.svg";
+import moeIndiaLogo from "@assets/Ministry_of_Education_India.svg";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
