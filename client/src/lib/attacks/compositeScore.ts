@@ -7,25 +7,26 @@ export interface CompositeResult {
 }
 
 /**
- * NIST-Inspired Composite Privacy Risk Score (8-Attack Framework)
+ * NIST-Inspired Composite Privacy Risk Score (10-Attack Framework)
  *
- * Weights reflect the threat landscape for Indian Government unit-level data:
- *  - Identity threats  (Prosecutor + Record Linkage + Singling Out): 0.50
- *  - Attribute threats (Attribute Disclosure + Marketer):            0.25
- *  - Inference threats (Journalist + Inference):                     0.20
- *  - Presence threats  (Membership):                                 0.05
+ * Identity threats  (Prosecutor + Record Linkage + Singling Out): 0.36
+ * Attribute threats (Attr. Disclosure + Marketer + Differencing):  0.31
+ * Inference threats (Journalist + Inference + Model Inversion):    0.29
+ * Presence threats  (Membership):                                  0.04
  *
  * All weights sum to 1.00.
  */
 const WEIGHTS = {
-  prosecutor:           0.15,
-  journalist:           0.15,
-  marketer:             0.10,
-  singlingOut:          0.15,
-  inference:            0.10,
-  membership:           0.05,
-  recordLinkage:        0.15,
-  attributeDisclosure:  0.15,
+  prosecutor:          0.12,
+  journalist:          0.10,
+  marketer:            0.08,
+  singlingOut:         0.12,
+  inference:           0.08,
+  membership:          0.04,
+  recordLinkage:       0.12,
+  attributeDisclosure: 0.12,
+  differencing:        0.11,
+  modelInversion:      0.11,
 };
 
 export function computeCompositeScore(risks: {
@@ -37,16 +38,20 @@ export function computeCompositeScore(risks: {
   membership: number;
   recordLinkage: number;
   attributeDisclosure: number;
+  differencing: number;
+  modelInversion: number;
 }): CompositeResult {
   const breakdown = [
-    { attack: "Prosecutor",            weight: WEIGHTS.prosecutor,           risk: risks.prosecutor },
-    { attack: "Journalist",            weight: WEIGHTS.journalist,           risk: risks.journalist },
-    { attack: "Marketer",              weight: WEIGHTS.marketer,             risk: risks.marketer },
-    { attack: "Singling Out",          weight: WEIGHTS.singlingOut,          risk: risks.singlingOut },
-    { attack: "Inference",             weight: WEIGHTS.inference,            risk: risks.inference },
-    { attack: "Membership",            weight: WEIGHTS.membership,           risk: risks.membership },
-    { attack: "Record Linkage",        weight: WEIGHTS.recordLinkage,        risk: risks.recordLinkage },
-    { attack: "Attribute Disclosure",  weight: WEIGHTS.attributeDisclosure,  risk: risks.attributeDisclosure },
+    { attack: "Prosecutor",           weight: WEIGHTS.prosecutor,          risk: risks.prosecutor },
+    { attack: "Journalist",           weight: WEIGHTS.journalist,          risk: risks.journalist },
+    { attack: "Marketer",             weight: WEIGHTS.marketer,            risk: risks.marketer },
+    { attack: "Singling Out",         weight: WEIGHTS.singlingOut,         risk: risks.singlingOut },
+    { attack: "Inference",            weight: WEIGHTS.inference,           risk: risks.inference },
+    { attack: "Membership",           weight: WEIGHTS.membership,          risk: risks.membership },
+    { attack: "Record Linkage",       weight: WEIGHTS.recordLinkage,       risk: risks.recordLinkage },
+    { attack: "Attr. Disclosure",     weight: WEIGHTS.attributeDisclosure, risk: risks.attributeDisclosure },
+    { attack: "Differencing",         weight: WEIGHTS.differencing,        risk: risks.differencing },
+    { attack: "Model Inversion",      weight: WEIGHTS.modelInversion,      risk: risks.modelInversion },
   ].map((b) => ({ ...b, weighted: b.weight * b.risk }));
 
   const composite = breakdown.reduce((s, b) => s + b.weighted, 0);

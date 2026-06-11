@@ -31,6 +31,8 @@ import { runInferenceAttack, type InferenceResult } from "@/lib/attacks/inferenc
 import { runMembershipAttack, type MembershipResult } from "@/lib/attacks/membershipAttack";
 import { runRecordLinkageAttack, type RecordLinkageResult } from "@/lib/attacks/recordLinkageAttack";
 import { runAttributeDisclosureAttack, type AttributeDisclosureResult } from "@/lib/attacks/attributeDisclosureAttack";
+import { runDifferencingAttack, type DifferencingResult } from "@/lib/attacks/differencingAttack";
+import { runModelInversionAttack, type ModelInversionResult } from "@/lib/attacks/modelInversionAttack";
 import { computeCompositeScore, type CompositeResult } from "@/lib/attacks/compositeScore";
 import { sampleData, type DataRow, RISK_COLORS, type RiskLevel } from "@/lib/attacks/utils";
 
@@ -45,20 +47,24 @@ interface AllResults {
   membership?: MembershipResult;
   recordLinkage?: RecordLinkageResult;
   attributeDisclosure?: AttributeDisclosureResult;
+  differencing?: DifferencingResult;
+  modelInversion?: ModelInversionResult;
   composite?: CompositeResult;
 }
 
-type AttackId = "prosecutor" | "journalist" | "marketer" | "singlingOut" | "inference" | "membership" | "recordLinkage" | "attributeDisclosure";
+type AttackId = "prosecutor" | "journalist" | "marketer" | "singlingOut" | "inference" | "membership" | "recordLinkage" | "attributeDisclosure" | "differencing" | "modelInversion";
 
 const ATTACKS: { id: AttackId; label: string; short: string; icon: React.ReactNode; description: string }[] = [
-  { id: "prosecutor",           label: "Prosecutor Attack",          short: "Prosecutor",    icon: <Target className="h-4 w-4" />,      description: "Within-Dataset Re-ID — Attacker knows target is in dataset, uses QIs to isolate" },
-  { id: "journalist",           label: "Journalist Attack",          short: "Journalist",    icon: <Eye className="h-4 w-4" />,         description: "Probabilistic Re-ID — Information-theoretic risk via Shannon entropy and EC analysis" },
-  { id: "marketer",             label: "Marketer Attack",            short: "Marketer",      icon: <Users className="h-4 w-4" />,       description: "Group Targeting — L-Diversity & T-Closeness: attacker targets groups, not individuals" },
-  { id: "singlingOut",          label: "Singling Out Attack",        short: "Singling Out",  icon: <Fingerprint className="h-4 w-4" />, description: "GDPR Article 4(1) — Minimal attribute combination sufficient to isolate one record" },
-  { id: "inference",            label: "Inference Attack",           short: "Inference",     icon: <Brain className="h-4 w-4" />,       description: "ML Prediction — CART decision tree predicts sensitive attributes from quasi-identifiers" },
-  { id: "membership",           label: "Membership Attack",          short: "Membership",    icon: <UserCheck className="h-4 w-4" />,   description: "Presence Detection — AUC-based test: can attacker tell if a record is in the dataset?" },
-  { id: "recordLinkage",        label: "Record Linkage Attack",      short: "Rec. Linkage",  icon: <Network className="h-4 w-4" />,     description: "External Re-ID — Links anonymized records to an external dataset using quasi-identifiers" },
-  { id: "attributeDisclosure",  label: "Attribute Disclosure Attack", short: "Attr. Disclose", icon: <Shield className="h-4 w-4" />,   description: "Sensitive Inference — Even without re-ID: attacker infers sensitive values from EC distributions" },
+  { id: "prosecutor",           label: "Prosecutor Attack",           short: "Prosecutor",      icon: <Target className="h-4 w-4" />,      description: "Within-Dataset Re-ID — Attacker knows target is in dataset, uses QIs to isolate" },
+  { id: "journalist",           label: "Journalist Attack",           short: "Journalist",      icon: <Eye className="h-4 w-4" />,         description: "Probabilistic Re-ID — Information-theoretic risk via Shannon entropy and EC analysis" },
+  { id: "marketer",             label: "Marketer Attack",             short: "Marketer",        icon: <Users className="h-4 w-4" />,       description: "Group Targeting — L-Diversity & T-Closeness: attacker targets groups, not individuals" },
+  { id: "singlingOut",          label: "Singling Out Attack",         short: "Singling Out",    icon: <Fingerprint className="h-4 w-4" />, description: "GDPR Article 4(1) — Minimal attribute combination sufficient to isolate one record" },
+  { id: "inference",            label: "Inference Attack",            short: "Inference",       icon: <Brain className="h-4 w-4" />,       description: "ML Prediction — CART decision tree predicts sensitive attributes from quasi-identifiers" },
+  { id: "membership",           label: "Membership Attack",           short: "Membership",      icon: <UserCheck className="h-4 w-4" />,   description: "Presence Detection — AUC-based test: can attacker tell if a record is in the dataset?" },
+  { id: "recordLinkage",        label: "Record Linkage Attack",       short: "Rec. Linkage",    icon: <Network className="h-4 w-4" />,     description: "External Re-ID — Links anonymized records to an external dataset using quasi-identifiers" },
+  { id: "attributeDisclosure",  label: "Attribute Disclosure Attack", short: "Attr. Disclose",  icon: <Shield className="h-4 w-4" />,      description: "Sensitive Inference — Even without re-ID: attacker infers sensitive values from EC distributions" },
+  { id: "differencing",         label: "Differencing Attack",         short: "Differencing",    icon: <BarChart3 className="h-4 w-4" />,   description: "Aggregate Leakage — Comparing Q1 vs Q2 (with/without one record) reveals individual contribution" },
+  { id: "modelInversion",       label: "Model Inversion Attack",      short: "Model Inversion", icon: <AlertTriangle className="h-4 w-4" />, description: "Reconstruction Attack — Naïve Bayes MAP recovers sensitive attribute values from QI combinations" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -699,6 +705,191 @@ function AttributeDisclosureReport({ r }: { r: AttributeDisclosureResult }) {
   );
 }
 
+function DifferencingReport({ r }: { r: DifferencingResult }) {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpiCard("Differencing Risk", `${r.leakyPct}%`, "Leaky query pairs / total", <BarChart3 className="h-4 w-4" />, "text-red-600")}
+        {kpiCard("Leaky Queries", r.leakyPairs, `of ${r.totalPairs} total pairs`, <AlertTriangle className="h-4 w-4" />, r.leakyPairs > 0 ? "text-orange-600" : "text-green-600")}
+        {kpiCard("Max Leakage", `${r.maxLeakage}%`, `Column: ${r.maxLeakageColumn || "—"}`, <XCircle className="h-4 w-4" />, r.maxLeakage > 40 ? "text-red-600" : r.maxLeakage > 20 ? "text-orange-600" : "text-green-600")}
+        {kpiCard("Avg Leakage", `${r.avgLeakage}%`, "Mean |Q1-Q2|/Q1 across all pairs", <Eye className="h-4 w-4" />)}
+      </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Leakage Distribution Histogram</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={r.leakageHistogram}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="bucket" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip {...CHART_TOOLTIP} />
+                <Bar dataKey="count" name="Query Pairs" radius={[4, 4, 0, 0]}>
+                  {r.leakageHistogram.map((_, i) => (
+                    <Cell key={i} fill={["#16A34A", "#D97706", "#EA580C", "#DC2626", "#7C0000"][i] || "#DC2626"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Per-Column Leakage Risk</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={r.perColumnRisks.slice(0, 8)} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis type="number" tick={{ fontSize: 11 }} unit="%" />
+                <YAxis type="category" dataKey="column" tick={{ fontSize: 10 }} width={90} />
+                <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v}%`} />
+                <Bar dataKey="maxLeakage" fill="#DC2626" radius={[0, 4, 4, 0]} name="Max Leakage %" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        {r.perColumnRisks.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Column-Level Differencing Risk Table</CardTitle></CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[220px]">
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b"><th className="text-left pb-1">Column</th><th className="text-right pb-1">Global Avg</th><th className="text-right pb-1">Max Leakage</th><th className="text-right pb-1">Avg Leakage</th><th className="text-right pb-1">Leaky Records</th><th className="text-right pb-1">Risk</th></tr></thead>
+                  <tbody>
+                    {r.perColumnRisks.map((col, i) => (
+                      <tr key={i} className="border-b border-muted">
+                        <td className="py-1 font-medium">{col.column}</td>
+                        <td className="py-1 text-right text-muted-foreground">{col.globalValue}</td>
+                        <td className="py-1 text-right font-bold" style={{ color: col.maxLeakage > 40 ? "#DC2626" : "#16A34A" }}>{col.maxLeakage}%</td>
+                        <td className="py-1 text-right">{col.avgLeakage}%</td>
+                        <td className="py-1 text-right">{col.leakyRecords} ({col.leakyPct}%)</td>
+                        <td className="py-1 text-right">{riskBadge(col.riskLevel)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        )}
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Top Leaky Records (Highest |Q1−Q2| / Q1)</CardTitle></CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[220px]">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b"><th className="text-left pb-1">Record #</th><th className="text-right pb-1">Column</th><th className="text-right pb-1">Global Avg</th><th className="text-right pb-1">Avg w/o Record</th><th className="text-right pb-1">Leakage</th></tr></thead>
+                <tbody>
+                  {r.topLeakyRecords.map((row, i) => (
+                    <tr key={i} className="border-b border-muted">
+                      <td className="py-1"># {row.index + 1}</td>
+                      <td className="py-1 text-right text-muted-foreground">{row.column}</td>
+                      <td className="py-1 text-right">{row.globalVal}</td>
+                      <td className="py-1 text-right">{row.withoutVal}</td>
+                      <td className="py-1 text-right font-bold text-red-600">{row.leakage}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
+      <RecommendationsCard recs={r.recommendations} />
+    </div>
+  );
+}
+
+function ModelInversionReport({ r }: { r: ModelInversionResult }) {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpiCard("Inversion Risk", `${r.inversionRate}%`, "Records reconstructed > 80% conf.", <AlertTriangle className="h-4 w-4" />, "text-red-600")}
+        {kpiCard("Max Confidence", `${r.maxConfidence}%`, "Highest Naïve Bayes confidence", <Brain className="h-4 w-4" />, r.maxConfidence > 75 ? "text-red-600" : "text-green-600")}
+        {kpiCard("Reconstruction Acc.", `${r.reconstructionAccuracy}%`, "Correct attribute predictions", <Target className="h-4 w-4" />, r.reconstructionAccuracy > 60 ? "text-orange-600" : "text-green-600")}
+        {kpiCard("Avg Confidence", `${r.avgConfidence}%`, "Mean prediction probability", <BarChart3 className="h-4 w-4" />)}
+      </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Prediction Confidence Histogram</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={r.confidenceHistogram}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="bucket" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip {...CHART_TOOLTIP} />
+                <Bar dataKey="count" name="Records" radius={[4, 4, 0, 0]}>
+                  {r.confidenceHistogram.map((_, i) => (
+                    <Cell key={i} fill={["#16A34A", "#D97706", "#EA580C", "#DC2626", "#7C0000"][i] || "#DC2626"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Inversion Rate at Different Confidence Thresholds</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={r.inversionCurve}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="threshold" tick={{ fontSize: 11 }} label={{ value: "Confidence Threshold", position: "insideBottom", offset: -2, fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 11 }} unit="%" />
+                <Tooltip {...CHART_TOOLTIP} />
+                <Line type="monotone" dataKey="rate" stroke="#DC2626" strokeWidth={2} dot name="Inversion Rate %" />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        {r.perSAResults.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Per Sensitive Attribute Inversion Analysis</CardTitle></CardHeader>
+            <CardContent>
+              <table className="w-full text-xs">
+                <thead><tr className="border-b"><th className="text-left pb-2">Attribute</th><th className="text-right pb-2">Avg Confidence</th><th className="text-right pb-2">Max Confidence</th><th className="text-right pb-2">Inversion Rate</th><th className="text-right pb-2">Top Reconstructed Value</th><th className="text-right pb-2">Risk</th></tr></thead>
+                <tbody>
+                  {r.perSAResults.map((sa, i) => (
+                    <tr key={i} className="border-b border-muted">
+                      <td className="py-1.5 font-medium">{sa.sa}</td>
+                      <td className="py-1.5 text-right">{sa.avgConfidence}%</td>
+                      <td className="py-1.5 text-right font-bold" style={{ color: sa.maxConfidence > 75 ? "#DC2626" : "#16A34A" }}>{sa.maxConfidence}%</td>
+                      <td className="py-1.5 text-right">{sa.inversionRate}%</td>
+                      <td className="py-1.5 text-right text-muted-foreground">{sa.reconstructedValue.slice(0, 20)}</td>
+                      <td className="py-1.5 text-right">{riskBadge(sa.riskLevel)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        )}
+        {r.topReconstructedRecords.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Top Reconstructed Records (Highest Confidence)</CardTitle></CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[220px]">
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b"><th className="text-left pb-1">QI Combination</th><th className="text-right pb-1">Sensitive Attr.</th><th className="text-right pb-1">Reconstructed Value</th><th className="text-right pb-1">Confidence</th></tr></thead>
+                  <tbody>
+                    {r.topReconstructedRecords.map((row, i) => (
+                      <tr key={i} className="border-b border-muted">
+                        <td className="py-1 pr-2 text-muted-foreground truncate max-w-[180px]">{row.qiCombo}</td>
+                        <td className="py-1 text-right">{row.targetSA}</td>
+                        <td className="py-1 text-right font-medium">{row.reconstructedValue}</td>
+                        <td className="py-1 text-right font-bold text-red-600">{row.confidence}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+      <RecommendationsCard recs={r.recommendations} />
+    </div>
+  );
+}
+
 function RecommendationsCard({ recs }: { recs: string[] }) {
   return (
     <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
@@ -747,6 +938,8 @@ function ComparisonDashboard({ results }: { results: AllResults }) {
     { attack: "Membership",           result: results.membership,           key: "membership" as AttackId,           threat: "Presence detection",          metric: results.membership ? `AUC ${results.membership.aucScore.toFixed(2)}` : "—" },
     { attack: "Record Linkage",       result: results.recordLinkage,        key: "recordLinkage" as AttackId,        threat: "External dataset re-ID",      metric: results.recordLinkage ? `${results.recordLinkage.perfectLinks} perfect links` : "—" },
     { attack: "Attr. Disclosure",     result: results.attributeDisclosure,  key: "attributeDisclosure" as AttackId,  threat: "Sensitive value inference",   metric: results.attributeDisclosure ? `Pmax ${(results.attributeDisclosure.worstCaseProb * 100).toFixed(0)}%` : "—" },
+    { attack: "Differencing",         result: results.differencing,         key: "differencing" as AttackId,         threat: "Aggregate query leakage",     metric: results.differencing ? `${results.differencing.leakyPct}% leaky queries` : "—" },
+    { attack: "Model Inversion",      result: results.modelInversion,       key: "modelInversion" as AttackId,       threat: "Attribute reconstruction",    metric: results.modelInversion ? `${results.modelInversion.inversionRate}% inverted` : "—" },
   ];
 
   const scoreColor = c.score >= 70 ? "text-red-600" : c.score >= 50 ? "text-orange-600" : c.score >= 30 ? "text-amber-600" : "text-green-600";
@@ -932,8 +1125,10 @@ export default function RiskPage() {
     if (selectedAttacks.includes("singlingOut"))         steps.push({ id: "singlingOut",         label: "Singling Out Attack (GDPR Singling-Out Standard)...",   fn: () => { newResults.singlingOut         = runSingleOutAttack(rawData, allCols, kThreshold[0]); } });
     if (selectedAttacks.includes("inference"))           steps.push({ id: "inference",           label: "Inference Attack (CART Decision Tree)...",              fn: () => { newResults.inference           = runInferenceAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
     if (selectedAttacks.includes("membership"))          steps.push({ id: "membership",          label: "Membership Attack (AUC Presence Detection)...",         fn: () => { newResults.membership          = runMembershipAttack(rawData, quasiIdentifiers); } });
-    if (selectedAttacks.includes("recordLinkage"))       steps.push({ id: "recordLinkage",       label: "Record Linkage Attack (External Dataset Re-ID)...",     fn: () => { newResults.recordLinkage       = runRecordLinkageAttack(rawData, quasiIdentifiers); } });
-    if (selectedAttacks.includes("attributeDisclosure")) steps.push({ id: "attributeDisclosure", label: "Attribute Disclosure Attack (Sensitive Inference)...",  fn: () => { newResults.attributeDisclosure = runAttributeDisclosureAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
+    if (selectedAttacks.includes("recordLinkage"))       steps.push({ id: "recordLinkage",       label: "Record Linkage Attack (External Dataset Re-ID)...",          fn: () => { newResults.recordLinkage       = runRecordLinkageAttack(rawData, quasiIdentifiers); } });
+    if (selectedAttacks.includes("attributeDisclosure")) steps.push({ id: "attributeDisclosure", label: "Attribute Disclosure Attack (Sensitive Inference)...",        fn: () => { newResults.attributeDisclosure = runAttributeDisclosureAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
+    if (selectedAttacks.includes("differencing"))        steps.push({ id: "differencing",        label: "Differencing Attack (Aggregate Query Leakage)...",            fn: () => { newResults.differencing        = runDifferencingAttack(rawData, quasiIdentifiers); } });
+    if (selectedAttacks.includes("modelInversion"))      steps.push({ id: "modelInversion",      label: "Model Inversion Attack (Naïve Bayes Reconstruction)...",      fn: () => { newResults.modelInversion      = runModelInversionAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
 
     for (let i = 0; i < steps.length; i++) {
       setProgress({ step: `${i + 1}/${steps.length}: Running ${steps[i].label}`, pct: Math.round((i / steps.length) * 100) });
@@ -953,6 +1148,8 @@ export default function RiskPage() {
       membership:          newResults.membership?.riskScore          ?? 0,
       recordLinkage:       newResults.recordLinkage?.riskScore       ?? 0,
       attributeDisclosure: newResults.attributeDisclosure?.riskScore ?? 0,
+      differencing:        newResults.differencing?.riskScore        ?? 0,
+      modelInversion:      newResults.modelInversion?.riskScore      ?? 0,
     });
 
     setResults(newResults);
@@ -1093,7 +1290,7 @@ export default function RiskPage() {
               <Network className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-1">No Assessment Results Yet</h3>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Select a dataset, configure quasi-identifiers and sensitive attributes, then click <strong>Run Assessment</strong> to analyse privacy risks across all 8 attack types.
+                Select a dataset, configure quasi-identifiers and sensitive attributes, then click <strong>Run Assessment</strong> to analyse privacy risks across all 10 attack types.
               </p>
             </Card>
           ) : (
@@ -1140,6 +1337,8 @@ export default function RiskPage() {
                       {a.id === "membership"          && <MembershipReport r={results.membership!} />}
                       {a.id === "recordLinkage"       && <RecordLinkageReport r={results.recordLinkage!} />}
                       {a.id === "attributeDisclosure" && <AttributeDisclosureReport r={results.attributeDisclosure!} />}
+                      {a.id === "differencing"        && <DifferencingReport r={results.differencing!} />}
+                      {a.id === "modelInversion"      && <ModelInversionReport r={results.modelInversion!} />}
                     </>
                   ) : (
                     <Card className="flex items-center justify-center py-12 text-muted-foreground text-sm">

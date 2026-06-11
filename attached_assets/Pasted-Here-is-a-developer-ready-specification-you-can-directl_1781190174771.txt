@@ -1,0 +1,274 @@
+Here is a **developer-ready specification** you can directly give to your Replit agent.
+
+---
+
+# ATTACK 9: DIFFERENCING ATTACK
+
+## Purpose
+
+Detect whether aggregate statistics can reveal information about a single individual.
+
+---
+
+# Mathematical Foundation
+
+Let:
+
+```text
+Q1 = Aggregate Query Result
+Q2 = Similar Query Result with one record removed
+```
+
+Information Leakage:
+
+Leakage=|Q_1-Q_2|
+
+Large difference means a single individual's data significantly affects the result.
+
+---
+
+## Example
+
+Dataset:
+
+| Person | Salary |
+| ------ | ------ |
+| A      | 50000  |
+| B      | 60000  |
+| C      | 70000  |
+
+Query 1:
+
+```text
+AVG Salary = 60000
+```
+
+Query 2 (without A):
+
+```text
+AVG Salary = 65000
+```
+
+Leakage:
+
+|60000-65000|=5000
+
+Risk exists.
+
+---
+
+# Risk Formula
+
+For N query pairs:
+
+Risk=\frac{Leaky\ Queries}{Total\ Query\ Pairs}\times100
+
+---
+
+# Algorithm
+
+```python
+def differencing_attack(df):
+
+    total_pairs = 0
+    leaky_pairs = 0
+
+    threshold = 0.05
+
+    for record in df:
+
+        q1 = compute_global_statistic(df)
+
+        df_without = df.remove(record)
+
+        q2 = compute_global_statistic(df_without)
+
+        leakage = abs(q1 - q2)
+
+        normalized_leakage = leakage / max(abs(q1), 1)
+
+        total_pairs += 1
+
+        if normalized_leakage > threshold:
+            leaky_pairs += 1
+
+    risk = (leaky_pairs / total_pairs) * 100
+
+    return risk
+```
+
+---
+
+# Risk Levels
+
+```text
+0-20      LOW
+20-40     MEDIUM
+40-60     HIGH
+60-100    CRITICAL
+```
+
+---
+
+# Dashboard Metrics
+
+```text
+Differencing Risk %
+Maximum Leakage
+Average Leakage
+Leaky Query Count
+Risk Level
+```
+
+---
+
+# ATTACK 10: MODEL INVERSION ATTACK
+
+## Purpose
+
+Determine whether sensitive attributes can be reconstructed from a trained model.
+
+---
+
+# Mathematical Foundation
+
+Attacker tries to find:
+
+x^*=\arg\max_x P(y|x)
+
+Meaning:
+
+```text
+Find input x
+that maximizes confidence
+for target class y
+```
+
+---
+
+## Privacy Interpretation
+
+If attacker knows:
+
+```text
+Age = 45
+Gender = Male
+```
+
+Can they recover:
+
+```text
+Disease = Cancer
+```
+
+from model behavior?
+
+---
+
+# Reconstruction Accuracy
+
+Let:
+
+```text
+Recovered Attributes = R
+Total Sensitive Attributes = T
+```
+
+Accuracy:
+
+Accuracy=\frac{R}{T}\times100
+
+---
+
+# Confidence Leakage
+
+Let:
+
+```text
+Pmax = Highest predicted probability
+```
+
+Risk:
+
+Risk=P_{max}\times100
+
+---
+
+# Practical Algorithm
+
+```python
+def model_inversion_attack(model, candidate_inputs):
+
+    best_confidence = 0
+    reconstructed_record = None
+
+    for x in candidate_inputs:
+
+        probs = model.predict_proba(x)
+
+        confidence = max(probs)
+
+        if confidence > best_confidence:
+            best_confidence = confidence
+            reconstructed_record = x
+
+    return {
+        "risk": best_confidence * 100,
+        "record": reconstructed_record
+    }
+```
+
+---
+
+# More Realistic Version
+
+```python
+def inversion_risk(model, test_data):
+
+    successful = 0
+
+    for record in test_data:
+
+        prediction = model.predict_proba(record)
+
+        confidence = max(prediction)
+
+        if confidence > 0.90:
+            successful += 1
+
+    return (successful / len(test_data)) * 100
+```
+
+---
+
+# Risk Levels
+
+```text
+0-25      LOW
+25-50     MEDIUM
+50-75     HIGH
+75-100    CRITICAL
+```
+
+---
+
+# Recommendation for Statathon
+
+Since your system is focused on:
+
+* CSV datasets
+* K-Anonymity
+* L-Diversity
+* T-Closeness
+* Privacy Risk Assessment
+
+Implement **Differencing Attack first**.
+
+Priority order:
+
+1. Record Linkage Attack ⭐⭐⭐⭐⭐
+2. Attribute Disclosure Attack ⭐⭐⭐⭐⭐
+3. Differencing Attack ⭐⭐⭐⭐
+4. Model Inversion Attack ⭐⭐ (only if you also analyze ML models)
+
+For a government-data privacy platform, Differencing Attack will be far more relevant and easier for judges to understand.
