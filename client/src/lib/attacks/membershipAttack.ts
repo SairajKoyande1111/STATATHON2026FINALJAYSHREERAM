@@ -47,7 +47,7 @@ export function runMembershipAttack(
   }
 
   // Shadow dataset: 30% members + synthetic non-members
-  const memberIdx = shuffle([...Array(n).keys()]).slice(0, Math.max(1, Math.floor(n * 0.3)));
+  const memberIdx = shuffle(Array.from(Array(n).keys())).slice(0, Math.max(1, Math.floor(n * 0.3)));
   const members = memberIdx.map((i) => data[i]);
 
   // Generate non-members (same distribution, independent sample)

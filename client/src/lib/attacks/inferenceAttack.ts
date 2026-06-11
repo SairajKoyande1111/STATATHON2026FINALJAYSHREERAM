@@ -40,7 +40,7 @@ function buildTree(X: number[][], y: string[], depth: number, maxDepth: number, 
   let bestThreshold = 0;
 
   for (let a = 0; a < X[0].length; a++) {
-    const vals = [...new Set(X.map((r) => r[a]))].sort((a, b) => a - b);
+    const vals = Array.from(new Set(X.map((r) => r[a]))).sort((a, b) => a - b);
     const thresholds = vals.slice(0, -1).map((v, i) => (v + vals[i + 1]) / 2);
 
     for (const t of thresholds.slice(0, 10)) {
@@ -167,7 +167,7 @@ export function runInferenceAttack(
     const baselineAcc = Math.max(...Array.from(classCounts.values())) / n;
 
     // 5-fold CV
-    const indices = shuffle([...Array(n).keys()]);
+    const indices = shuffle(Array.from(Array(n).keys()));
     const foldSize = Math.floor(n / 5);
     let correct = 0;
     const localImportance = new Map<string, number>();

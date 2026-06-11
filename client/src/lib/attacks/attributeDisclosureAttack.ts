@@ -183,7 +183,7 @@ export function runAttributeDisclosureAttack(
       globalSensitiveValues.set(v, (globalSensitiveValues.get(v) || 0) + 1);
     });
   });
-  const topSensitiveValues = [...globalSensitiveValues.entries()]
+  const topSensitiveValues = Array.from(globalSensitiveValues.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([value, frequency]) => ({

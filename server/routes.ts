@@ -1127,10 +1127,6 @@ export async function registerRoutes(
         res.setHeader("Content-Type", "text/html");
         res.setHeader("Content-Disposition", `attachment; filename="${report.title.replace(/\s+/g, "_")}.html"`);
         res.send(html);
-      } else {
-        res.setHeader("Content-Type", "text/html");
-        res.setHeader("Content-Disposition", `attachment; filename="${report.title.replace(/\s+/g, "_")}.html"`);
-        res.send(html);
       }
     } catch (error) {
       res.status(500).send("Failed to download report");

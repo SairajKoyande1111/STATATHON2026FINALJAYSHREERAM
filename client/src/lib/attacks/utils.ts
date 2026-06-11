@@ -60,7 +60,7 @@ export function totalVariationDistance(
   local: Map<string, number>,
   global: Map<string, number>
 ): number {
-  const all = new Set([...local.keys(), ...global.keys()]);
+  const all = new Set([...Array.from(local.keys()), ...Array.from(global.keys())]);
   let tvd = 0;
   all.forEach((v) => {
     tvd += Math.abs((local.get(v) || 0) - (global.get(v) || 0));
