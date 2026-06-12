@@ -252,7 +252,7 @@ export function runMarketerAttack(
     // Weighted average by records (per-record: use EC's maxFreq)
     let totalWeightedFreq = 0;
     ecMap.forEach((indices, key) => {
-      const idx = [...ecMap.keys()].indexOf(key);
+      const idx = Array.from(ecMap.keys()).indexOf(key);
       totalWeightedFreq += ecMaxFreqs[idx] * indices.length;
     });
     const avgDisclosureRisk = n > 0 ? totalWeightedFreq / n : 0;

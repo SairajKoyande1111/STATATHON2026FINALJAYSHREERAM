@@ -46,6 +46,9 @@ export interface FormAResult {
     meaning: string;
   }[];
   highRiskRecordPct: number;  // % in ECs with conf >= 0.7
+  majorityClassPct: number;   // naive-guesser baseline (majority class proportion × 100)
+  inferenceFormALift: number; // datasetRisk*100 − majorityClassPct (true attacker lift in pp)
+  allSingletonArtifact: boolean; // true when every EC has size = 1
 }
 
 export interface FormBResult {
@@ -223,8 +226,13 @@ function detectSAType(data: DataRow[], col: string): SAType {
   const vals = data.map((r) => r[col]).filter((v) => v !== null && v !== undefined && v !== "");
   const distinct = new Set(vals.map(String));
   if (distinct.size <= 2) return "binary";
-  const isNumeric = vals.every((v) => !isNaN(Number(v)));
-  if (isNumeric && distinct.size > 10) return "continuous";
+  // Strip common unit suffixes (e.g. "37.4 acres") before numeric check
+  const stripped = vals.map((v) => String(v).replace(/\s*acres?\s*$/i, "").replace(/\s*hectares?\s*$/i, "").trim());
+  const numericCount = stripped.filter((v) => v !== "" && !isNaN(parseFloat(v))).length;
+  const isNumeric = numericCount / Math.max(stripped.length, 1) >= 0.7;
+  const hasDecimals = stripped.some((v) => !isNaN(parseFloat(v)) && v.includes("."));
+  // Continuous if: majority numeric AND (floats detected OR high cardinality)
+  if (isNumeric && (hasDecimals || distinct.size > 10)) return "continuous";
   return "categorical";
 }
 
@@ -347,6 +355,17 @@ export function runInferenceAttack(
     const highRiskCount = confidencesPerRecord.filter((c) => c >= FORM_A_HIGH).length;
     const highRiskRecordPct = (highRiskCount / n) * 100;
 
+    // Majority-class baseline (Fix 3): naive guesser always predicts most common SA value
+    const saValCounts = new Map<string, number>();
+    data.forEach((row) => {
+      const v = String(row[sa] ?? "");
+      saValCounts.set(v, (saValCounts.get(v) ?? 0) + 1);
+    });
+    const majorityCount = Math.max(...Array.from(saValCounts.values()));
+    const majorityClassPct = n > 0 ? (majorityCount / n) * 100 : 0;
+    const inferenceFormALift = datasetRisk * 100 - majorityClassPct;
+    const allSingletonArtifact = ecBreakdown.length > 0 && ecBreakdown.every((ec) => ec.ecSize === 1);
+
     // Confidence distribution
     const confBuckets = [
       { bucket: "0.90–1.00", min: 0.90, max: 1.01, meaning: "Attacker near-certain of SA value" },
@@ -369,6 +388,9 @@ export function runInferenceAttack(
       ecBreakdown: [...ecBreakdown].sort((a, b) => b.confidence - a.confidence),
       confidenceDistribution,
       highRiskRecordPct,
+      majorityClassPct,
+      inferenceFormALift,
+      allSingletonArtifact,
     };
 
     // ── FORM B ─────────────────────────────────────────────────────────────
@@ -485,12 +507,27 @@ export function runInferenceAttack(
   perSAResults.forEach((r) => {
     const saType = detectSAType(data, r.sa);
     const confStr = `${(r.formA.datasetRisk * 100).toFixed(1)}%`;
-    if (r.formA.datasetRisk >= FORM_A_HIGH) {
-      const n_ec = r.formA.ecBreakdown.filter((e) => e.confidence >= FORM_A_HIGH).length;
-      recommendations.push(saTypeRecommendation(saType, r.sa, confStr, n_ec, quasiIdentifiers));
-    } else if (r.formA.datasetRisk >= FORM_A_MEDIUM) {
-      recommendations.push(saMediumRecommendation(saType, r.sa, confStr));
+
+    if (r.formA.allSingletonArtifact) {
+      // Fix 2: singleton ECs make Form A confidence a mathematical artifact — suppress MEDIUM/CRITICAL
+      // Only add a single explanatory note (not actionable) so the panel isn't contradictory
+      if (r.formA.datasetRisk >= FORM_A_MEDIUM) {
+        recommendations.push(
+          `ℹ️ NOT APPLICABLE (Singleton Artifact) — Form A confidence for "${r.sa}" is ${confStr} ` +
+          `but all ${r.formA.ecBreakdown.length} equivalence classes are singletons (EC size = 1). ` +
+          `This is a mathematical artifact of over-specified quasi-identifiers, not a genuine inference risk. ` +
+          `Action: coarsen or reduce QIs so multi-record equivalence classes form before any Form A remediation is considered.`
+        );
+      }
+    } else {
+      if (r.formA.datasetRisk >= FORM_A_HIGH) {
+        const n_ec = r.formA.ecBreakdown.filter((e) => e.confidence >= FORM_A_HIGH).length;
+        recommendations.push(saTypeRecommendation(saType, r.sa, confStr, n_ec, quasiIdentifiers));
+      } else if (r.formA.datasetRisk >= FORM_A_MEDIUM) {
+        recommendations.push(saMediumRecommendation(saType, r.sa, confStr));
+      }
     }
+
     if (r.formB.status === "ok" && (r.formB.inferenceLift ?? 0) > LIFT_MEDIUM * 100) {
       recommendations.push(
         `🟡 MEDIUM — Form B Inference Lift for "${r.sa}" is +${r.formB.inferenceLift}pp. QIs are strong predictors of "${r.sa}" across the WHOLE dataset. Consider removing or coarsening the most predictive QI.`

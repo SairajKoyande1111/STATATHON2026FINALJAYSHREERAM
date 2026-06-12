@@ -2235,7 +2235,7 @@ function InferenceReport({ r }: { r: InferenceResult }) {
             {/* Form A */}
             <div className="p-3 rounded border bg-white/50 dark:bg-black/20">
               <div className="font-semibold text-xs mb-2 text-muted-foreground uppercase tracking-wider">Form A — Group-Based Inference</div>
-              <div className="flex items-center gap-4 mb-3">
+              <div className="flex items-center gap-4 mb-3 flex-wrap">
                 <div>
                   <div className="text-xs text-muted-foreground">Dataset-wide avg confidence</div>
                   <div className="text-2xl font-bold" style={{ color: inferenceFormAColor(sa.formA.datasetRisk) }}>
@@ -2243,10 +2243,31 @@ function InferenceReport({ r }: { r: InferenceResult }) {
                   </div>
                 </div>
                 <div>
+                  <div className="text-xs text-muted-foreground">Majority-class baseline</div>
+                  <div className="text-2xl font-bold text-slate-500">{sa.formA.majorityClassPct.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Attacker lift vs baseline</div>
+                  <div className={`text-xl font-bold ${sa.formA.inferenceFormALift > 10 ? "text-red-600" : sa.formA.inferenceFormALift > 0 ? "text-amber-600" : "text-green-600"}`}>
+                    {sa.formA.inferenceFormALift > 0 ? "+" : ""}{sa.formA.inferenceFormALift.toFixed(1)} pp
+                  </div>
+                </div>
+                <div>
                   <div className="text-xs text-muted-foreground">Records in high-risk groups (≥70%)</div>
                   <div className="text-xl font-bold text-red-600">{sa.formA.highRiskRecordPct.toFixed(1)}%</div>
                 </div>
               </div>
+              {/* Baseline context note for binary/categorical SAs */}
+              {!sa.formA.allSingletonArtifact && sa.formA.inferenceFormALift <= 5 && sa.formA.datasetRisk >= 0.5 && (
+                <div className="mb-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 rounded text-xs text-green-800 dark:text-green-200">
+                  ℹ️ <strong>Low attacker lift:</strong> Form A confidence of {(sa.formA.datasetRisk * 100).toFixed(1)}% is only {sa.formA.inferenceFormALift.toFixed(1)} pp above the majority-class baseline of {sa.formA.majorityClassPct.toFixed(1)}%. A random guesser predicting the majority class would already be right ~{sa.formA.majorityClassPct.toFixed(0)}% of the time — QI groups provide minimal additional inference power.
+                </div>
+              )}
+              {!sa.formA.allSingletonArtifact && sa.formA.inferenceFormALift > 10 && (
+                <div className="mb-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 rounded text-xs text-red-800 dark:text-red-200">
+                  🔴 <strong>Significant attacker lift:</strong> Form A gives +{sa.formA.inferenceFormALift.toFixed(1)} pp above the {sa.formA.majorityClassPct.toFixed(1)}% majority-class baseline — knowing which QI group a person belongs to meaningfully increases the attacker's ability to infer "{sa.sa}".
+                </div>
+              )}
 
               {/* ── Structural artifact warning when ALL ECs are singletons ── */}
               {sa.formA.ecBreakdown.length > 0 && sa.formA.ecBreakdown.every((ec) => ec.ecSize === 1) && (
@@ -3437,7 +3458,7 @@ function ComparisonDashboard({ results }: { results: AllResults }) {
 
   const tableRows = [
     { attack: "Prosecutor",           result: results.prosecutor,           key: "prosecutor" as AttackId,           threat: "Within-dataset re-ID",       metric: results.prosecutor ? `${results.prosecutor.uniqueRecordsCount} unique records` : "—" },
-    { attack: "Journalist",           result: results.journalist,           key: "journalist" as AttackId,           threat: "QI violations",               metric: results.journalist ? `${results.journalist.violations} violations` : "—" },
+    { attack: "Journalist",           result: results.journalist,           key: "journalist" as AttackId,           threat: "Pop. re-id risk",             metric: results.journalist ? `${results.journalist.atRiskCount} at-risk records` : "—" },
     { attack: "Marketer",             result: results.marketer,             key: "marketer" as AttackId,             threat: "Group attribute disclosure",   metric: results.marketer ? `${(results.marketer.lDiversityPassRate * 100).toFixed(0)}% L-div pass` : "—" },
     { attack: "Singling Out",         result: results.singlingOut,          key: "singlingOut" as AttackId,          threat: "GDPR/DPDP singling-out",      metric: results.singlingOut ? `${results.singlingOut.singulableCount} singulable` : "—" },
     { attack: "Inference",            result: results.inference,            key: "inference" as AttackId,            threat: "ML attribute prediction",     metric: results.inference ? `${results.inference.infoGain}% info gain` : "—" },
