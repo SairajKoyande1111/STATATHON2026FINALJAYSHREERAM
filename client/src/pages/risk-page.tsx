@@ -3393,7 +3393,18 @@ export default function RiskPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quasi-Identifiers</Label>
-                      <Badge variant="outline" className="text-[10px] h-4 px-1">{quasiIdentifiers.length} sel.</Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="text-[10px] h-4 px-1">{quasiIdentifiers.length} sel.</Badge>
+                        {quasiIdentifiers.length > 0 && (
+                          <button
+                            onClick={() => setQuasiIdentifiers([])}
+                            className="text-[10px] text-muted-foreground hover:text-destructive underline leading-none"
+                            title="Uncheck all quasi-identifiers"
+                          >
+                            Uncheck all
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <ScrollArea className="h-[120px] rounded-md border p-2">
                       <div className="space-y-1">
@@ -3416,7 +3427,18 @@ export default function RiskPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sensitive Attributes</Label>
-                      <Badge variant="outline" className="text-[10px] h-4 px-1">{sensitiveAttributes.length} sel.</Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="text-[10px] h-4 px-1">{sensitiveAttributes.length} sel.</Badge>
+                        {sensitiveAttributes.length > 0 && (
+                          <button
+                            onClick={() => setSensitiveAttributes([])}
+                            className="text-[10px] text-muted-foreground hover:text-destructive underline leading-none"
+                            title="Uncheck all sensitive attributes"
+                          >
+                            Uncheck all
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <ScrollArea className="h-[100px] rounded-md border p-2">
                       <div className="space-y-1">
