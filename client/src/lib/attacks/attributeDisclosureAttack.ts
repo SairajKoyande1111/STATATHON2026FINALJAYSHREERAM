@@ -111,7 +111,7 @@ export interface AttributeDisclosureResult {
 function classifyDisclosure(freq: number): DisclosureLabel {
   if (freq >= 1.0) return "Guaranteed";
   if (freq >= 0.75) return "High";
-  if (freq >= 0.50) return "Moderate";
+  if (freq > 0.50) return "Moderate";
   return "Safe";
 }
 
@@ -217,8 +217,8 @@ export function runAttributeDisclosureAttack(
     // Outcome counts
     const guaranteedRecords = recordDomFreq.filter((v) => v >= 1.0).length;
     const highRiskRecords   = recordDomFreq.filter((v) => v >= 0.75 && v < 1.0).length;
-    const moderateRiskRecords = recordDomFreq.filter((v) => v >= 0.50 && v < 0.75).length;
-    const safeRecords       = recordDomFreq.filter((v) => v < 0.50).length;
+    const moderateRiskRecords = recordDomFreq.filter((v) => v > 0.50 && v < 0.75).length;
+    const safeRecords       = recordDomFreq.filter((v) => v <= 0.50).length;
 
     // Global distribution of SA
     const globalVals = data.map((r) => String(r[sa] ?? ""));
@@ -319,7 +319,7 @@ export function runAttributeDisclosureAttack(
       disclosureLabels,
       maxDisclosureRisk: parseFloat(maxRisk.toFixed(4)),
       maxRiskSa: maxSa,
-      atRisk: maxRisk >= 0.5,
+      atRisk: maxRisk > 0.5,
     };
   });
 
