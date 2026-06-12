@@ -1,0 +1,811 @@
+# SafeData Pipeline — Comparison Module: Complete Specification
+> Risk Assessment → Comparison Tab  
+> Government of India — Ministry of Statistics and Programme Implementation  
+> Developed by AIRAVATA Technologies | MoSPI Statathon 2025
+
+---
+
+## 0. What is the Comparison Module?
+
+The **Comparison Module** is the **aggregated, cross-attack synthesis layer** of the Risk Assessment module. After the user runs any combination of the 10 individual attacks, this tab:
+
+1. **Aggregates** the risk scores from all enabled attacks into a single composite score (the NIST Composite Risk Score shown in the header).
+2. **Normalises** each attack's output to a common 0–100 scale.
+3. **Cross-compares** attacks along key dimensions — threat model, protection mechanism, severity — to give NSO decision-makers a single-screen answer: *"How bad is this dataset overall, and which attack is the primary threat?"*
+4. **Generates** a priority-ordered action list that de-duplicates and ranks recommendations across all attacks.
+5. **Explains** what the composite score means in plain English, with contextual thresholds from NIST, GDPR EDPB, and DPDP Act 2023 standards.
+
+> The Comparison score visible as "86.8" in the top navigation bar (from the screenshot) is this module's primary output.
+
+---
+
+## 1. Input: Scores from All 10 Attacks
+
+Before computing the composite, the module **collects one normalised score per enabled attack**. The table below shows the canonical formula for each attack's score on the 0–100 scale:
+
+| # | Attack | Score Variable | Formula | Score Range | Threshold (SAFE) |
+|---|--------|---------------|---------|-------------|------------------|
+| 1 | Prosecutor | `prosecutor_score` | `(num_singletons / N) × 100` | 0–100 | < 5 |
+| 2 | Journalist | `journalist_score` | `re_id_risk_journalist × 100` | 0–100 | < 5 |
+| 3 | Marketer | `marketer_score` | `marketer_reid_rate × 100` | 0–100 | < 5 |
+| 4 | Singling Out | `singling_out_score` | `predicate_so_rate × 100` | 0–100 | < 5 |
+| 5 | Inference | `inference_score` | `overall_form_a_risk × 100` | 0–100 | < 40 |
+| 6 | Membership | `membership_score` | `pct_high_risk_records` | 0–100 | < 5 |
+| 7 | Rec. Linkage | `rec_linkage_score` | `ECLR × 100` | 0–100 | < 5 |
+| 8 | Attr. Disclose | `attr_disclose_score` | `Overall_ADR × 100` | 0–100 | < 20 |
+| 9 | Differencing | `differencing_score` | `DDR × 100` | 0–100 | < 20 |
+| 10 | Model Inversion | `model_inversion_score` | `MIRisk_dataset × 100` | 0–100 | < 30 |
+
+> **Critical note on Inference score:** Inference has a different "safe" threshold (< 40) because the Form A confidence score has a non-zero floor of `1/num_SA_categories`. A "safe" dataset can legitimately score 20–35 on Inference. This must be reflected in the normalisation (Section 2.3).
+
+---
+
+## 2. Mathematical Model — Composite Score
+
+### 2.1 Notation
+
+| Symbol | Meaning |
+|--------|---------|
+| `n` | Number of **enabled** attacks (user can disable individual attacks in the left panel) |
+| `Sᵢ` | Raw score for attack `i` (0–100 scale, as per Section 1) |
+| `Wᵢ` | Weight for attack `i` (see Section 2.2) |
+| `Nᵢ` | Normalised score for attack `i` after threshold adjustment (see Section 2.3) |
+| `NIST_CRS` | NIST Composite Risk Score (the headline number, 0–100) |
+| `PASS_i` | Boolean: whether attack `i` is in PASS state (score below safe threshold) |
+
+---
+
+### 2.2 Weighting Model
+
+Not all attacks are equal in severity. The Comparison module uses a **severity-weighted average** rather than a simple mean. Default weights:
+
+| Attack | Weight `Wᵢ` | Justification |
+|--------|-------------|---------------|
+| Prosecutor | 1.5 | Worst-case adversary; known-target threat; most legally significant |
+| Marketer | 1.5 | Bulk re-identification; highest commercial harm at scale |
+| Model Inversion | 1.5 | Directly reconstructs sensitive values; hardest to defend without privacy engineering |
+| Singling Out | 1.2 | GDPR-defined primary harm; no external data needed |
+| Inference | 1.2 | Bypasses k-anonymity; detects structural leakage |
+| Attr. Disclose | 1.2 | Directly linked to l-diversity violation; sensitive value exposure |
+| Differencing | 1.0 | Aggregate-level risk; depends on release scenario |
+| Rec. Linkage | 1.0 | Bulk join threat; same formula as Prosecutor but different framing |
+| Journalist | 0.8 | Journalist ≤ Prosecutor always; provides population-adjusted lower bound |
+| Membership | 0.8 | Presence-only disclosure; narrower harm than re-identification |
+
+> **Configuration note for Replit Agent:** The weights `Wᵢ` must be **configurable constants** defined at the top of the Comparison module file — not hardcoded inline. NSO staff may wish to adjust weights based on their data release policy context.
+
+---
+
+### 2.3 Score Normalisation (Threshold-Relative Scaling)
+
+Because different attacks have different "safe" thresholds (some are SAFE at < 5, Inference at < 40, Model Inversion at < 30), raw scores are NOT directly comparable. A raw score of 40 on Inference is LOW risk, but a raw score of 40 on Prosecutor is CRITICAL.
+
+**Normalise each raw score to a 0–100 "danger percentage" relative to its safe threshold:**
+
+```
+safe_threshold_i = [values from Section 1 rightmost column]
+critical_threshold_i = 80  (uniform — any attack scoring above 80 raw is Critical)
+
+Nᵢ = clip( (Sᵢ - safe_threshold_i) / (critical_threshold_i - safe_threshold_i) × 100, 0, 100 )
+```
+
+**Worked example:**
+```
+Inference raw score = 45
+safe_threshold = 40
+critical_threshold = 80
+
+Nᵢ = (45 - 40) / (80 - 40) × 100 = 5/40 × 100 = 12.5   → LOW normalised risk
+
+Prosecutor raw score = 45
+safe_threshold = 5
+critical_threshold = 80
+
+Nᵢ = (45 - 5) / (80 - 5) × 100 = 40/75 × 100 = 53.3   → MEDIUM normalised risk
+```
+
+This makes the composite score meaningful: a score of 53 always means "roughly halfway between safe and critical" regardless of which attack generated it.
+
+---
+
+### 2.4 NIST Composite Risk Score (NIST_CRS)
+
+```
+NIST_CRS = (Σᵢ  Wᵢ × Nᵢ)  /  (Σᵢ Wᵢ)
+
+Where the sum is over all ENABLED attacks i that have successfully run.
+```
+
+**Boundary conditions:**
+- If NO attacks are enabled: `NIST_CRS = 0`, display "No attacks selected."
+- If only 1 attack is enabled: `NIST_CRS = N₁` (normalised score of that single attack).
+- If an attack is enabled but returned an error or "insufficient data": exclude it from both numerator and denominator.
+
+**Risk level classification:**
+
+| NIST_CRS | Risk Level | Badge Colour | Meaning |
+|----------|-----------|-------------|---------|
+| 0 – 24 | LOW | 🟢 Green | Dataset is reasonably well-protected across all attack types |
+| 25 – 49 | MEDIUM | 🟡 Yellow | Significant vulnerabilities in multiple attack dimensions |
+| 50 – 69 | HIGH | 🟠 Orange | Serious re-identification or disclosure risk; remediation required |
+| 70 – 100 | CRITICAL | 🔴 Red | Dataset must NOT be released without major privacy engineering |
+
+---
+
+### 2.5 Pass/Fail Tally
+
+In addition to the weighted composite, report a **simple pass/fail count** using raw scores and safe thresholds:
+
+```
+for each enabled attack i:
+    PASS_i = (Sᵢ < safe_threshold_i)
+
+Pass_count  = count(PASS_i == True)
+Fail_count  = count(PASS_i == False)
+Pass_rate   = Pass_count / n × 100
+```
+
+The Pass/Fail tally appears as: **"10/10 attacks run · 2/10 PASS · 8/10 FAIL"** directly below the NIST_CRS gauge.
+
+---
+
+### 2.6 Worst-Case Single Attack Score
+
+```
+Worst_Score   = max(Nᵢ for all enabled i)
+Worst_Attack  = argmax(Nᵢ)
+```
+
+This is reported as: **"Highest risk: [Worst_Attack] ([Worst_Score])"** in the summary panel.
+
+---
+
+## 3. Full Comparison Algorithm (Step by Step)
+
+```python
+def run_comparison(attack_results, enabled_attacks, user_k, user_l, user_t):
+    """
+    attack_results: dict mapping attack_name -> result_dict from each attack module
+    enabled_attacks: list of attack names the user has checked in the left panel
+    """
+
+    WEIGHTS = {
+        'Prosecutor':     1.5,
+        'Journalist':     0.8,
+        'Marketer':       1.5,
+        'Singling Out':   1.2,
+        'Inference':      1.2,
+        'Membership':     0.8,
+        'Rec. Linkage':   1.0,
+        'Attr. Disclose': 1.2,
+        'Differencing':   1.0,
+        'Model Inversion':1.5,
+    }
+
+    SAFE_THRESHOLDS = {
+        'Prosecutor':     5,
+        'Journalist':     5,
+        'Marketer':       5,
+        'Singling Out':   5,
+        'Inference':      40,
+        'Membership':     5,
+        'Rec. Linkage':   5,
+        'Attr. Disclose': 20,
+        'Differencing':   20,
+        'Model Inversion':30,
+    }
+
+    CRITICAL_THRESHOLD = 80  # uniform upper anchor for normalisation
+
+    # Step 1: Extract raw scores from each enabled attack
+    raw_scores = {}
+    for attack in enabled_attacks:
+        result = attack_results.get(attack)
+        if result is None or result.get('error'):
+            continue  # exclude failed attacks
+        raw_scores[attack] = extract_score(attack, result)
+        # extract_score reads the canonical score field per Section 1
+
+    if not raw_scores:
+        return {'NIST_CRS': 0, 'status': 'no_results'}
+
+    # Step 2: Normalise each raw score
+    normalised_scores = {}
+    for attack, S in raw_scores.items():
+        thresh   = SAFE_THRESHOLDS[attack]
+        critical = CRITICAL_THRESHOLD
+        N = max(0.0, min(100.0, (S - thresh) / (critical - thresh) * 100))
+        normalised_scores[attack] = N
+
+    # Step 3: Weighted sum
+    weighted_sum  = sum(WEIGHTS[a] * normalised_scores[a] for a in normalised_scores)
+    total_weight  = sum(WEIGHTS[a] for a in normalised_scores)
+    NIST_CRS      = weighted_sum / total_weight
+
+    # Step 4: Risk classification
+    if   NIST_CRS < 25: risk_level = 'LOW'
+    elif NIST_CRS < 50: risk_level = 'MEDIUM'
+    elif NIST_CRS < 70: risk_level = 'HIGH'
+    else:               risk_level = 'CRITICAL'
+
+    # Step 5: Pass/Fail tally
+    pass_fail = {a: (raw_scores[a] < SAFE_THRESHOLDS[a]) for a in raw_scores}
+    pass_count = sum(pass_fail.values())
+    fail_count = len(pass_fail) - pass_count
+
+    # Step 6: Worst attack
+    worst_attack = max(normalised_scores, key=normalised_scores.get)
+    worst_score  = normalised_scores[worst_attack]
+
+    # Step 7: Score breakdown (for the bar chart in Score Breakdown panel)
+    score_breakdown = [
+        {
+            'attack': attack,
+            'raw_score': raw_scores[attack],
+            'normalised_score': normalised_scores[attack],
+            'pass': pass_fail[attack],
+            'weight': WEIGHTS[attack],
+            'contribution': WEIGHTS[attack] * normalised_scores[attack] / total_weight,
+        }
+        for attack in normalised_scores
+    ]
+    score_breakdown.sort(key=lambda x: x['normalised_score'], reverse=True)
+
+    # Step 8: Priority action list (see Section 5)
+    priority_actions = build_priority_actions(attack_results, raw_scores, pass_fail)
+
+    # Step 9: Cross-attack comparison table (see Section 4.5)
+    comparison_table = build_comparison_table(attack_results, raw_scores, normalised_scores, pass_fail)
+
+    return {
+        'NIST_CRS':        round(NIST_CRS, 1),
+        'risk_level':      risk_level,
+        'pass_count':      pass_count,
+        'fail_count':      fail_count,
+        'worst_attack':    worst_attack,
+        'worst_score':     round(worst_score, 1),
+        'score_breakdown': score_breakdown,
+        'priority_actions': priority_actions,
+        'comparison_table': comparison_table,
+        'raw_scores':      raw_scores,
+        'normalised_scores': normalised_scores,
+        'pass_fail':       pass_fail,
+    }
+```
+
+---
+
+## 4. UI Output Sections (What to Render in the Comparison Tab)
+
+### 4.1 NIST Composite Risk Score — Headline Widget
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         NIST COMPOSITE RISK SCORE                            │
+│                                                                              │
+│                              [ 86.8 ]                                        │
+│                               / 100                                          │
+│                          🔴  CRITICAL                                        │
+│                                                                              │
+│           ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━●               │
+│          0 LOW          30 MED          50 HIGH          70 CRIT            │
+│                                                                              │
+│         10 of 10 attacks run  ·  0 PASS  ·  10 FAIL                        │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Display components:**
+- Large numeric score (1 decimal place)
+- Colour-coded risk level label
+- Progress bar / gauge (0–100) with zone markers at 25, 50, 70
+- Pass/Fail tally line
+- "Highest single-attack risk: [Worst_Attack] ([Worst_Score])" sub-line
+
+---
+
+### 4.2 6-Axis Risk Radar Chart
+
+A hexagonal radar chart with one axis per major attack dimension. The 6 axes map the 10 attacks into 6 conceptual threat dimensions:
+
+| Radar Axis | Attacks Contributing | How to Compute Axis Value |
+|------------|---------------------|--------------------------|
+| Re-Identification | Prosecutor + Journalist (averaged) | `(Nᵢ_Prosecutor + Nᵢ_Journalist) / 2` |
+| Population Linkage | Marketer + Rec. Linkage (averaged) | `(Nᵢ_Marketer + Nᵢ_Rec_Linkage) / 2` |
+| Attribute Disclosure | Attr. Disclose + Inference (max) | `max(Nᵢ_Attr, Nᵢ_Inference)` |
+| Singling Out | Singling Out only | `Nᵢ_Singling_Out` |
+| Membership | Membership only | `Nᵢ_Membership` |
+| Model Inversion | Model Inversion + Differencing (max) | `max(Nᵢ_Model_Inv, Nᵢ_Differencing)` |
+
+> If an attack in a group is disabled, compute the axis from the remaining enabled attacks in that group only. If the entire group is disabled, draw that axis at 0 and mark it "Not Run."
+
+**Radar chart properties:**
+- Scale: 0 (centre) to 100 (outer edge)
+- Background: concentric rings at 25, 50, 75, 100
+- Filled polygon: use `rgba(239, 68, 68, 0.3)` fill (red-toned for risk)
+- Axis labels at outer edge (the 6 dimension names above)
+- Each axis vertex shows the numeric value as a tooltip on hover
+
+---
+
+### 4.3 Score Breakdown — Horizontal Bar Chart
+
+A ranked horizontal bar chart showing ALL enabled attacks, sorted by normalised score descending. This is the "Score Breakdown" panel visible on the right side of the screenshot.
+
+**For each attack (one row per attack):**
+
+```
+[Attack Name]        [████████████████████░░░░░] [Raw Score]%   [PASS/FAIL badge]
+```
+
+- Bar = normalised score Nᵢ (0–100)
+- Label on right = raw score Sᵢ as a percentage
+- Badge: 🔴 FAIL if Sᵢ ≥ safe_threshold, 🟢 PASS otherwise
+- Bar colour: same colour scheme as NIST_CRS risk levels
+  - Normalised score 0–24: green bar
+  - 25–49: yellow bar
+  - 50–69: orange bar
+  - 70–100: red bar
+
+**Special handling:** If an attack is enabled but returned "insufficient data" (e.g., Membership with N < 5, or Inference Form B with too few SA categories), show a grey bar with label "N/A – insufficient data" and exclude from composite.
+
+---
+
+### 4.4 Attack Risk Comparison Bar Chart (Sorted by Risk)
+
+A horizontal bar chart of **raw scores** (not normalised) for all enabled attacks, sorted descending. This is the "Attack Risk Comparison" chart visible in the screenshot below the radar.
+
+```
+[Attack]     [████████████████████████████████████████████████████████████] 100%
+Marketer     ████████████████████████████████████████████████████████████  100%
+Inference    ████████████████████████████████████████████████████████████  100%
+Attr.Discl.  ████████████████████████████████████████████████████████████  100%
+Model Inv.   ████████████████████████████████████████████████████████████  100%
+Differencing ████████████████████████████████████████████████████████████  100%
+Rec.Linkage  ████████████████████████████████████████████████████████████  100%
+Singling Out ████████████████████████████████████████████████████████████  100%
+Membership   ████████████████████████████  20%
+Journalist   ░  0.1%
+             0%         25%        50%        75%        100%
+```
+
+- Background colour zones: 0–5% = green zone, 5–20% = yellow zone, 20%+ = red zone
+- Hover tooltip per bar: shows raw score, normalised score, pass/fail, primary threat metric name
+
+---
+
+### 4.5 Risk Summary Table
+
+The primary data table in the Comparison tab. One row per enabled attack.
+
+**Columns:**
+
+| Column | Content | Source |
+|--------|---------|--------|
+| Attack | Name | — |
+| Risk Score | Raw score Sᵢ (e.g., "100.0%") | `raw_scores[i]` |
+| Risk Level | LOW / MEDIUM / HIGH / CRITICAL | Based on raw score vs thresholds per Section 2.4 |
+| Primary Threat | One-sentence plain-English description | See Section 4.5.1 below |
+| Key Metric | The single most important number from that attack | See Section 4.5.1 below |
+| Status | ✅ PASS or ❌ FAIL | `pass_fail[i]` |
+
+**Per-attack Risk Level thresholds (for the Risk Level column — uses RAW scores, NOT normalised):**
+
+| Attack | LOW | MEDIUM | HIGH | CRITICAL |
+|--------|-----|--------|------|----------|
+| Prosecutor | < 5 | 5–20 | 20–50 | > 50 |
+| Journalist | < 5 | 5–20 | 20–50 | > 50 |
+| Marketer | < 5 | 5–20 | 20–50 | > 50 |
+| Singling Out | < 5 | 5–20 | 20–50 | > 50 |
+| Inference | < 40 | 40–60 | 60–80 | > 80 |
+| Membership | < 5 | 5–20 | 20–50 | > 50 |
+| Rec. Linkage | < 5 | 5–20 | 20–50 | > 50 |
+| Attr. Disclose | < 20 | 20–50 | 50–80 | > 80 |
+| Differencing | < 20 | 20–50 | 50–80 | > 80 |
+| Model Inversion | < 30 | 30–60 | 60–80 | > 80 |
+
+#### 4.5.1 Primary Threat and Key Metric Strings
+
+Fill these from the attack result objects — all values are real, not template placeholders:
+
+| Attack | Primary Threat String | Key Metric String |
+|--------|-----------------------|-------------------|
+| Prosecutor | "Within-dataset re-ID" | "[num_singletons] unique records" |
+| Journalist | "Pop. re-id risk" | "[num_population_unique] at pop.-level risk" |
+| Marketer | "Group attribute disclosure" | "[percent_l_div_pass]% L-div pass" |
+| Singling Out | "GDPR/PDPD singling-out" | "[num_singletons] singlable" |
+| Inference | "ML attribute prediction" | "[inference_lift × 100]% info gain" |
+| Membership | "Presence detection" | "AUC [membership_auc]" |
+| Rec. Linkage | "External dataset re-ID" | "[num_certain_links] certain links" |
+| Attr. Disclose | "Sensitive value inference" | "ADR [Overall_ADR × 100]%" |
+| Differencing | "Aggregate query leakage" | "DDR [DDR × 100]%" |
+| Model Inversion | "Attribute reconstruction" | "[pct_fully_inverted]% inverted" |
+
+> **Implementation note:** If a key metric value is not available because the attack did not run, display "—" in the cell. Never display "undefined" or "NaN".
+
+---
+
+### 4.6 Cross-Attack Comparison: What Each Attack Tests
+
+A comparison table explaining — in non-technical terms — how the 10 attacks differ. This is the educational layer for NSO officers who are not privacy experts.
+
+| Attack | External Data Needed? | Target | What It Reveals | Defeated By | DPDP 2023 Relevance |
+|--------|-----------------------|--------|-----------------|-------------|---------------------|
+| Prosecutor | Yes (voter rolls, census) | 1 specific known person | That person's exact row + all their SAs | k-anonymity (large ECs) | Section 4 — data minimisation |
+| Journalist | Yes (population register) | 1 person, unknown if in dataset | Same, but population-adjusted | Sampling + k-anonymity | Section 4 — data minimisation |
+| Marketer | Yes (commercial databases) | All records at once | Which records are linkable + their SA values | k-anonymity + l-diversity | Section 6 — purpose limitation |
+| Singling Out | ❌ No | Any unique individual | That a unique record exists (even without a name) | k-anonymity | GDPR Art. 4(1) — identification |
+| Inference | ❌ No (uses the dataset) | Anyone in an EC | Their sensitive attribute value, guessed from QIs | l-diversity + t-closeness | Section 4 — data minimisation |
+| Membership | ❌ Partially (person's own profile) | 1 specific person | Whether they participated at all | Outlier suppression, DP | Section 8 — consent |
+| Rec. Linkage | Yes (any external table) | All records (bulk join) | Identities of all uniquely-linked individuals | k-anonymity | Section 6 — purpose limitation |
+| Attr. Disclose | ❌ No | Anyone in a homogeneous EC | Their SA value with certainty | l-diversity | Section 4 — data minimisation |
+| Differencing | ❌ No (only aggregate stats needed) | 1 person in small group | Their SA value from two aggregate queries | Differential Privacy noise | Section 4 — data minimisation |
+| Model Inversion | Model or aggregate access | Anyone with known QIs | Their SA value via statistical reconstruction | l-diversity + DP + noise | Section 4 — data minimisation |
+
+---
+
+### 4.7 Protection Coverage Matrix
+
+A matrix showing which **privacy mechanisms** protect against which attacks. This shows the user where applying a single fix helps multiple attacks:
+
+```
+                    k-Anonymity   l-Diversity   t-Closeness   Diff. Privacy   Outlier Suppression
+Prosecutor             ✅               ❌           ❌              ❌                ✅
+Journalist             ✅               ❌           ❌              ❌                ✅
+Marketer               ✅               ✅           ❌              ❌                ✅
+Singling Out           ✅               ❌           ❌              ❌                ✅
+Inference              ⚠️ Partial      ✅           ✅              ❌                ❌
+Membership             ❌               ❌           ❌              ⚠️ Partial       ✅
+Rec. Linkage           ✅               ❌           ❌              ❌                ✅
+Attr. Disclose         ⚠️ Partial      ✅           ⚠️ Partial     ❌                ❌
+Differencing           ❌               ❌           ❌              ✅                ❌
+Model Inversion        ✅               ✅           ✅              ⚠️ Partial       ❌
+
+Legend:  ✅ Effective    ⚠️ Partial    ❌ Does NOT protect
+```
+
+**Below the matrix, show a summary table:**
+
+| Mechanism | Attacks Effectively Defended |
+|-----------|------------------------------|
+| k-Anonymity | Prosecutor, Journalist, Marketer, Singling Out, Rec. Linkage |
+| l-Diversity | Marketer, Inference, Attr. Disclose, Model Inversion |
+| t-Closeness | Inference, Attr. Disclose (partial), Model Inversion |
+| Differential Privacy | Differencing (primary), Membership (partial) |
+| Outlier Suppression | Prosecutor, Journalist, Marketer, Singling Out, Rec. Linkage, Membership |
+
+> **Interpretation message below matrix:**
+> "Increasing k-anonymity alone will fix 5 of your 10 failing attacks. Apply l-diversity next to address Inference, Attribute Disclosure, and Model Inversion. Differencing requires Differential Privacy noise — it cannot be fixed by k-anonymity or l-diversity."
+
+---
+
+### 4.8 Priority Action List
+
+The most actionable section for NSO decision-makers. A deduplicated, severity-ordered action list synthesised from all attack recommendations.
+
+**Algorithm to build the priority action list:**
+
+```python
+def build_priority_actions(attack_results, raw_scores, pass_fail):
+    actions = []
+
+    # === TIER 1: CRITICAL (Score > 50 on any attack) ===
+    # These are dataset-release-blocking issues
+
+    if raw_scores.get('Prosecutor', 0) > 20:
+        actions.append({
+            'priority': 'URGENT',
+            'colour': '🔴',
+            'action': f"Mitigate Prosecutor attack ({raw_scores['Prosecutor']:.0f}% risk) — highest priority",
+            'detail': f"Apply record suppression for {attack_results['Prosecutor']['num_singletons']} singleton records, OR generalise {attack_results['Prosecutor']['top_qi']} to raise Min-K to {user_k}.",
+            'attacks_addressed': ['Prosecutor', 'Journalist', 'Rec. Linkage', 'Singling Out'],
+            'mechanism': 'k-Anonymity / Record Suppression'
+        })
+
+    if raw_scores.get('Marketer', 0) > 20:
+        actions.append({
+            'priority': 'URGENT',
+            'colour': '🔴',
+            'action': f"Mitigate Marketer attack ({raw_scores['Marketer']:.0f}% risk) — highest priority",
+            'detail': f"Expected {attack_results['Marketer']['expected_correct_reids']} bulk re-identifications. Apply k-anonymisation (target Min-K ≥ {user_k}) and enforce l-diversity for all sensitive attributes.",
+            'attacks_addressed': ['Marketer', 'Rec. Linkage'],
+            'mechanism': 'k-Anonymity + l-Diversity'
+        })
+
+    if raw_scores.get('Attr. Disclose', 0) > 20:
+        worst_sa = attack_results['Attr. Disclose']['worst_sa']
+        actions.append({
+            'priority': 'URGENT',
+            'colour': '🔴',
+            'action': f"Mitigate Attribute Disclosure attack ({raw_scores['Attr. Disclose']:.0f}% risk)",
+            'detail': f"ADR = {attack_results['Attr. Disclose']['overall_adr']:.1%}. Enforce l-diversity ≥ {user_l} for {worst_sa}. {attack_results['Attr. Disclose']['guaranteed_records']} records are in fully homogeneous ECs — their {worst_sa} value is directly inferable without re-identification.",
+            'attacks_addressed': ['Attr. Disclose', 'Inference', 'Model Inversion'],
+            'mechanism': 'l-Diversity'
+        })
+
+    if raw_scores.get('Differencing', 0) > 20:
+        actions.append({
+            'priority': 'URGENT',
+            'colour': '🔴',
+            'action': f"Mitigate Differencing attack ({raw_scores['Differencing']:.0f}% risk) — requires Differential Privacy",
+            'detail': f"DDR = {attack_results['Differencing']['DDR']:.1%}. {attack_results['Differencing']['exact_count']} records are exactly reconstructable via aggregate query pairs. k-anonymity and l-diversity DO NOT protect against this. Apply Laplace mechanism (ε=1.0) to all published statistics derived from this dataset.",
+            'attacks_addressed': ['Differencing'],
+            'mechanism': 'Differential Privacy (Laplace Mechanism)'
+        })
+
+    if raw_scores.get('Model Inversion', 0) > 30:
+        actions.append({
+            'priority': 'URGENT',
+            'colour': '🔴',
+            'action': f"Mitigate Model Inversion attack ({raw_scores['Model Inversion']:.0f}% risk)",
+            'detail': f"MIRisk = {attack_results['Model Inversion']['MIRisk_dataset']:.2f}. Sensitive attributes are reconstructable from QI combinations. Increase l-diversity to {user_l}, apply t-closeness (t ≤ {user_t}), and add noise to aggregate statistics.",
+            'attacks_addressed': ['Model Inversion', 'Inference', 'Attr. Disclose'],
+            'mechanism': 'l-Diversity + t-Closeness + Noise'
+        })
+
+    if raw_scores.get('Singling Out', 0) > 5:
+        actions.append({
+            'priority': 'URGENT',
+            'colour': '🔴',
+            'action': f"Mitigate Singling Out attack ({raw_scores['Singling Out']:.0f}% risk)",
+            'detail': f"{attack_results['Singling Out']['num_singletons']} records can be singled out using ≤ 3 QI columns with NO external data required. This violates GDPR Article 4(1) and DPDP Act 2023 data minimisation principles. Generalise or suppress [top_singling_column].",
+            'attacks_addressed': ['Singling Out', 'Prosecutor'],
+            'mechanism': 'k-Anonymity / Column Generalisation'
+        })
+
+    if raw_scores.get('Inference', 0) > 40:
+        actions.append({
+            'priority': 'HIGH',
+            'colour': '🟠',
+            'action': f"Mitigate Inference attack ({raw_scores['Inference']:.0f}% average SA confidence)",
+            'detail': f"QIs predict sensitive attributes with {raw_scores['Inference']:.0f}% average confidence. This exceeds the safe threshold of 40%. Apply l-diversity transformations in Privacy Enhancement. Note: a dataset can satisfy k-anonymity and still fail Inference.",
+            'attacks_addressed': ['Inference'],
+            'mechanism': 'l-Diversity + QI Generalisation'
+        })
+
+    if raw_scores.get('Membership', 0) > 5:
+        actions.append({
+            'priority': 'MEDIUM',
+            'colour': '🟡',
+            'action': f"Mitigate Membership Inference ({raw_scores['Membership']:.0f}% high-risk records)",
+            'detail': f"{attack_results['Membership']['num_high_risk']} records are outliers — their distinctive profile alone enables presence confirmation. Apply top/bottom-coding and attribute generalisation for the most distinctive records.",
+            'attacks_addressed': ['Membership'],
+            'mechanism': 'Outlier Suppression / Top-Bottom Coding'
+        })
+
+    if raw_scores.get('Journalist', 0) > 5:
+        actions.append({
+            'priority': 'MEDIUM',
+            'colour': '🟡',
+            'action': f"Note: Journalist attack ({raw_scores['Journalist']:.0f}% risk) — population-adjusted re-ID risk",
+            'detail': f"Journalist Re-ID Risk is {raw_scores['Journalist']:.1f}% vs Prosecutor risk of {raw_scores.get('Prosecutor', 0):.1f}%. Sampling provides some protection, but {attack_results['Journalist']['num_population_unique']} records remain unique even at population level.",
+            'attacks_addressed': ['Journalist'],
+            'mechanism': 'k-Anonymity / Sampling Control'
+        })
+
+    if raw_scores.get('Rec. Linkage', 0) > 5:
+        actions.append({
+            'priority': 'HIGH',
+            'colour': '🟠',
+            'action': f"Mitigate Record Linkage attack ({raw_scores['Rec. Linkage']:.0f}% expected linkage rate)",
+            'detail': f"ECLR = {raw_scores['Rec. Linkage']:.1f}%. Amplification Factor = {attack_results['Rec. Linkage']['amplification_factor']}×. An attacker with an external voter roll can bulk re-identify {attack_results['Rec. Linkage']['expected_correct_reids']} records. Generalise {attack_results['Rec. Linkage']['top_qi']} first.",
+            'attacks_addressed': ['Rec. Linkage', 'Marketer'],
+            'mechanism': 'k-Anonymity / QI Generalisation'
+        })
+
+    # Sort: URGENT → HIGH → MEDIUM → LOW
+    priority_order = {'URGENT': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+    actions.sort(key=lambda x: priority_order[x['priority']])
+
+    return actions
+```
+
+**Render as a numbered list in the UI:**
+
+```
+PRIORITY ACTION LIST
+
+🔴 URGENT: Mitigate Prosecutor attack (100% risk) — highest priority
+   Apply record suppression for 20 singleton records, OR generalise FSU_Serial_No
+   to raise Min-K to 2. This will also reduce Journalist, Record Linkage, and Singling
+   Out scores.
+   → Mechanism: k-Anonymity / Record Suppression
+   → Attacks addressed: Prosecutor, Journalist, Rec. Linkage, Singling Out
+
+🔴 URGENT: Mitigate Marketer attack (100% risk) — highest priority
+   [...]
+
+🔴 URGENT: Mitigate Differencing attack (100% risk) — requires Differential Privacy
+   [...]
+
+[...continues for all triggered conditions...]
+```
+
+---
+
+### 4.9 Comparison Tab — Plain English Summary Paragraph
+
+A template-filled paragraph at the top of the Comparison tab (above the NIST gauge), written for a non-technical NSO officer:
+
+```
+This dataset scored [NIST_CRS] out of 100 on the NIST Composite Risk Score — a
+[CRITICAL/HIGH/MEDIUM/LOW] privacy risk. Of [n] attacks tested, [fail_count] failed
+and [pass_count] passed.
+
+The highest risk comes from the [Worst_Attack] attack ([Worst_Score_raw]% risk), which
+[plain-English description of what that attack can do].
+
+[If Differencing failed]: IMPORTANT — This dataset is also vulnerable to the Differencing
+attack, which can reconstruct sensitive values from published aggregate statistics
+without any raw data access. k-anonymity alone cannot fix this; Differential Privacy
+noise must be applied before releasing any summary tables.
+
+[If Journalist passed but Prosecutor failed]: Note — the Journalist score (lower than
+Prosecutor) reflects that sampling provides some population-level protection. However,
+[num_population_unique] records remain uniquely identifiable even at population level
+and must be suppressed regardless.
+
+Recommended first action: [top priority action from Section 4.8, first item's 'action' field].
+Go to Privacy Enhancement to apply the recommended transformations, then re-run this
+assessment to verify improvement.
+```
+
+---
+
+## 5. Key Metric Extraction: `extract_score()` Implementation
+
+This function reads the canonical score field from each attack's result dictionary:
+
+```python
+def extract_score(attack_name, result):
+    """Returns the raw 0-100 score for the given attack from its result dict."""
+
+    score_map = {
+        'Prosecutor':     lambda r: r.get('re_id_risk', 0) * 100,
+        # re_id_risk = num_singletons / N (as fraction), already 0-1 from Prosecutor spec
+        # NOTE: Some specs define this as mean(link_scores); use num_singletons/N for badge
+
+        'Journalist':     lambda r: r.get('re_id_risk_journalist', 0) * 100,
+
+        'Marketer':       lambda r: r.get('marketer_reid_rate', 0) * 100,
+
+        'Singling Out':   lambda r: r.get('predicate_so_rate', 0),
+        # predicate_so_rate is already a percentage (0-100) in Singling Out spec
+
+        'Inference':      lambda r: r.get('overall_form_a_risk', 0) * 100,
+
+        'Membership':     lambda r: r.get('pct_high_risk', 0),
+        # pct_high_risk = (high_risk_records / N) × 100
+
+        'Rec. Linkage':   lambda r: r.get('ECLR', 0) * 100,
+
+        'Attr. Disclose': lambda r: r.get('overall_adr', 0) * 100,
+
+        'Differencing':   lambda r: r.get('DDR', 0) * 100,
+
+        'Model Inversion':lambda r: r.get('MIRisk_dataset', 0) * 100,
+    }
+
+    extractor = score_map.get(attack_name)
+    if extractor is None:
+        return 0
+    try:
+        score = extractor(result)
+        return max(0.0, min(100.0, float(score)))
+    except Exception:
+        return 0
+```
+
+---
+
+## 6. Score Validation & Sanity Checks
+
+The Comparison module must assert these invariants after computing scores. Log a warning (visible in the developer console, not in the user UI) if any fail:
+
+| Check | Assertion | If Failed |
+|-------|-----------|-----------|
+| C1 | `journalist_score ≤ prosecutor_score` (always, same dataset) | Log warning: "Journalist > Prosecutor — check ec_size_population computation" |
+| C2 | `marketer_score == prosecutor_score` approximately (same ECLR formula) | Acceptable small difference due to population prior adjustment; no action |
+| C3 | `NIST_CRS ∈ [0, 100]` | Clip to bounds; log error if Weighted Sum / Total Weight is outside [0,1] |
+| C4 | All `Nᵢ ∈ [0, 100]` after normalisation | clip() function in algorithm handles this |
+| C5 | If `pass_count + fail_count == n` | Basic count check — ensures no attacks dropped silently |
+| C6 | If all attacks return score = 100, `NIST_CRS = 100` exactly | Verify weighted average with equal weights |
+| C7 | `rec_linkage_score ≈ prosecutor_score` (same ECLR formula, different framing) | No action needed; expected approximate equality |
+
+---
+
+## 7. State Management and Re-Run Behaviour
+
+### 7.1 When to Recompute
+
+The Comparison module must **recompute automatically** whenever:
+- The user clicks "Run Assessment" and at least one enabled attack produces new results
+- The user enables or disables an attack in the left panel (attack scenarios checkboxes)
+- The user changes QI/SA selection or k/l/t parameters (these trigger a stale-data warning)
+
+### 7.2 Stale Data Warning
+
+If the user modifies QI/SA/k/l/t configuration AFTER running attacks (but before re-running), show:
+
+```
+⚠️ Configuration has changed since the last run. Comparison scores below reflect 
+the PREVIOUS run's QI/SA/k/l/t settings. Click "Run Assessment" to refresh.
+```
+
+### 7.3 Partial Results
+
+If only some attacks have run (e.g., user ran 6 of 10), the Comparison module computes the composite over the 6 completed attacks and shows:
+
+```
+Showing composite for 6/10 attacks. Run all attacks for a complete score.
+Missing: [list of not-run attacks]
+```
+
+---
+
+## 8. Export
+
+The Comparison tab provides a **"Download Comparison Report (PDF/HTML)"** button that generates an auto-formatted report containing:
+
+1. Dataset filename + timestamp
+2. NIST Composite Risk Score + risk level
+3. Score Breakdown table (all attacks, raw + normalised scores, pass/fail)
+4. 6-Axis Radar chart (exported as SVG/PNG)
+5. Risk Summary Table
+6. Protection Coverage Matrix
+7. Priority Action List (full detail)
+8. Plain English Summary paragraph
+9. QI/SA/k/l/t configuration used
+
+Report format: **HTML with inline CSS** (does not require external dependencies; can be printed to PDF from browser). Include the AIRAVATA / MoSPI / Statathon 2025 logo header.
+
+---
+
+## 9. Data Flow Summary
+
+```
+[All 10 attack modules run independently]
+              ↓
+Each attack returns a result dict with its canonical score field
+              ↓
+comparison_module.run_comparison(attack_results, enabled_attacks, k, l, t)
+              ↓
+Step 1: Extract raw scores from each enabled attack result
+Step 2: Normalise each score relative to its safe/critical thresholds
+Step 3: Compute weighted sum → NIST_CRS
+Step 4: Classify NIST_CRS into LOW/MEDIUM/HIGH/CRITICAL
+Step 5: Compute pass/fail tally
+Step 6: Identify worst attack (max normalised score)
+Step 7: Build score_breakdown list (sorted by normalised score)
+Step 8: Compute 6-axis radar values (grouped by threat dimension)
+Step 9: Build priority action list (conditional, deduplicated)
+Step 10: Build cross-attack comparison table
+              ↓
+Render Comparison tab:
+  4.1 NIST Composite Score headline widget
+  4.2 6-Axis Radar Chart
+  4.3 Score Breakdown horizontal bar chart (right panel)
+  4.4 Attack Risk Comparison bar chart (centre panel)
+  4.5 Risk Summary Table
+  4.6 Cross-Attack Comparison (threat model table)
+  4.7 Protection Coverage Matrix
+  4.8 Priority Action List
+  4.9 Plain English Summary paragraph (top of tab)
+```
+
+---
+
+## 10. Key Design Decisions and Rationale
+
+| Decision | Rationale |
+|----------|-----------|
+| **Weighted average over simple mean** | Prosecutor, Marketer, and Model Inversion represent more severe, legally significant threats. A simple mean would treat Journalist and Membership equally with these — misleading for policy decisions. |
+| **Threshold-relative normalisation (Nᵢ)** | Inference's "safe zone" ends at 40%, not 5% like re-ID attacks. Without normalisation, Inference at 45% raw would contribute less to the composite than Prosecutor at 10% raw — but the Prosecutor at 10% is actually safer (below its threshold). |
+| **6-Axis Radar over 10-Axis** | 10 separate axes creates visual clutter and false precision. The 6 conceptual threat dimensions group attacks by mechanism, making it immediately clear whether the dataset's problem is re-identification, attribute leakage, or presence detection. |
+| **Priority Action List deduplication** | Prosecutor and Record Linkage share the same fix (k-anonymity). A naive merge of both attack's recommendations would show the same action twice. The Priority Action List merges overlapping recommendations and tags which attacks each fix addresses. |
+| **Journalist always ≤ Prosecutor** | Enforced by the Journalist algorithm (`ec_size_population ≥ ec_size_sample`). The Comparison module sanity check (C1) catches any implementation bug where this invariant breaks. |
+| **Differencing gets a separate urgent warning** | It is the only attack not fixed by any of the other privacy mechanisms. NSO officers may assume "if we fix k-anonymity and l-diversity, we're safe" — the Comparison module must make the DP requirement explicit and non-optional. |
+
+---
+
+*Specification version: 1.0 | Module: Risk Assessment → Comparison | SafeData Pipeline*  
+*Government of India — MoSPI | Statathon 2025 | Developed by AIRAVATA Technologies*

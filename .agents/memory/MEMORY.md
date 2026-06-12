@@ -4,3 +4,4 @@
 - [Form B Rarity Scoring](form-b-rarity.md) — log-normalization is still min-max in log-space; use sigmoid on log z-score to avoid boundary artifacts
 - [Attribute Disclosure Spec](attr-disclosure-spec.md) — disc_risk = dominant_freq per EC; ADR = mean across records; overall = max across SAs; 13-section UI; labels: Guaranteed/High/Moderate/Safe
 - [Differencing Attack Spec](differencing-attack-spec.md) — diff_risk = EC-based lookup (1.0/0.75/0.50/1/k/max(0.05,1/k)); DDR = mean; 14-section UI; runner takes kThreshold+lThreshold+tVal
+- [Comparison Module Spec](comparison-module-spec.md) — NIST_CRS: threshold-relative normalisation §2.3; weights in ATTACK_WEIGHTS; thresholds 0-24/25-49/50-69/70-100; computeCompositeScore takes full RawAttackResults not riskScore scalars

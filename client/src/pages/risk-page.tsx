@@ -35,7 +35,7 @@ import { runRecordLinkageAttack, type RecordLinkageResult, type LinkageOutcome }
 import { runAttributeDisclosureAttack, type AttributeDisclosureResult, type DisclosureLabel } from "@/lib/attacks/attributeDisclosureAttack";
 import { runDifferencingAttack, type DifferencingResult, type DiffLabel } from "@/lib/attacks/differencingAttack";
 import { runModelInversionAttack, type ModelInversionResult } from "@/lib/attacks/modelInversionAttack";
-import { computeCompositeScore, type CompositeResult } from "@/lib/attacks/compositeScore";
+import { computeCompositeScore, type ComparisonResult } from "@/lib/attacks/compositeScore";
 import { sampleData, type DataRow, RISK_COLORS, type RiskLevel } from "@/lib/attacks/utils";
 import { runAutoAssist, type AutoAssistResult, type ColumnClass } from "@/lib/autoAssist";
 
@@ -52,7 +52,7 @@ interface AllResults {
   attributeDisclosure?: AttributeDisclosureResult;
   differencing?: DifferencingResult;
   modelInversion?: ModelInversionResult;
-  composite?: CompositeResult;
+  composite?: ComparisonResult;
 }
 
 type AttackId = "prosecutor" | "journalist" | "marketer" | "singlingOut" | "inference" | "membership" | "recordLinkage" | "attributeDisclosure" | "differencing" | "modelInversion";
@@ -4886,166 +4886,475 @@ function RecommendationsCard({ recs }: { recs: string[] }) {
 
 // ─── Comparison Dashboard ──────────────────────────────────────────────────────
 
+// §4.7 Protection coverage matrix data
+const PROTECTION_MATRIX: {
+  attack: string;
+  kAnon: "✅" | "⚠️" | "❌";
+  lDiv: "✅" | "⚠️" | "❌";
+  tClose: "✅" | "⚠️" | "❌";
+  dp: "✅" | "⚠️" | "❌";
+  outlier: "✅" | "⚠️" | "❌";
+}[] = [
+  { attack: "Prosecutor",     kAnon: "✅", lDiv: "❌", tClose: "❌", dp: "❌", outlier: "✅" },
+  { attack: "Journalist",     kAnon: "✅", lDiv: "❌", tClose: "❌", dp: "❌", outlier: "✅" },
+  { attack: "Marketer",       kAnon: "✅", lDiv: "✅", tClose: "❌", dp: "❌", outlier: "✅" },
+  { attack: "Singling Out",   kAnon: "✅", lDiv: "❌", tClose: "❌", dp: "❌", outlier: "✅" },
+  { attack: "Inference",      kAnon: "⚠️", lDiv: "✅", tClose: "✅", dp: "❌", outlier: "❌" },
+  { attack: "Membership",     kAnon: "❌", lDiv: "❌", tClose: "❌", dp: "⚠️", outlier: "✅" },
+  { attack: "Rec. Linkage",   kAnon: "✅", lDiv: "❌", tClose: "❌", dp: "❌", outlier: "✅" },
+  { attack: "Attr. Disclose", kAnon: "⚠️", lDiv: "✅", tClose: "⚠️", dp: "❌", outlier: "❌" },
+  { attack: "Differencing",   kAnon: "❌", lDiv: "❌", tClose: "❌", dp: "✅", outlier: "❌" },
+  { attack: "Model Inversion",kAnon: "✅", lDiv: "✅", tClose: "✅", dp: "⚠️", outlier: "❌" },
+];
+
+// §4.6 Cross-attack threat model data
+const THREAT_MODEL: {
+  attack: string;
+  external: string;
+  target: string;
+  reveals: string;
+  defeatedBy: string;
+  dpdp: string;
+}[] = [
+  { attack: "Prosecutor",     external: "Yes (voter rolls, census)", target: "1 specific known person",       reveals: "Exact row + all SAs",              defeatedBy: "k-Anonymity (large ECs)",       dpdp: "§4 data minimisation" },
+  { attack: "Journalist",     external: "Yes (population register)", target: "1 person, unknown if in data",  reveals: "Same, population-adjusted",         defeatedBy: "Sampling + k-Anonymity",        dpdp: "§4 data minimisation" },
+  { attack: "Marketer",       external: "Yes (commercial DBs)",      target: "All records at once",           reveals: "Which records are linkable + SAs",  defeatedBy: "k-Anonymity + l-Diversity",     dpdp: "§6 purpose limitation" },
+  { attack: "Singling Out",   external: "❌ No",                     target: "Any unique individual",         reveals: "Unique record exists",              defeatedBy: "k-Anonymity",                   dpdp: "GDPR Art. 4(1)" },
+  { attack: "Inference",      external: "❌ No (uses the dataset)",  target: "Anyone in an EC",               reveals: "Sensitive attribute via QIs",       defeatedBy: "l-Diversity + t-Closeness",     dpdp: "§4 data minimisation" },
+  { attack: "Membership",     external: "⚠️ Partially (own profile)", target: "1 specific person",           reveals: "Whether they participated",         defeatedBy: "Outlier suppression, DP",       dpdp: "§8 consent" },
+  { attack: "Rec. Linkage",   external: "Yes (any external table)",  target: "All records (bulk join)",       reveals: "Identities of linked records",      defeatedBy: "k-Anonymity",                   dpdp: "§6 purpose limitation" },
+  { attack: "Attr. Disclose", external: "❌ No",                     target: "Anyone in homogeneous EC",     reveals: "SA value with certainty",           defeatedBy: "l-Diversity",                   dpdp: "§4 data minimisation" },
+  { attack: "Differencing",   external: "❌ No (only aggregates)",   target: "1 person in small group",      reveals: "SA value from two queries",         defeatedBy: "Differential Privacy noise",    dpdp: "§4 data minimisation" },
+  { attack: "Model Inversion",external: "Model / aggregate access",  target: "Anyone with known QIs",         reveals: "SA value via statistical recon.",   defeatedBy: "l-Div + DP + noise",            dpdp: "§4 data minimisation" },
+];
+
+function nistLevelColor(score: number): string {
+  if (score >= 70) return "text-red-600";
+  if (score >= 50) return "text-orange-600";
+  if (score >= 25) return "text-amber-500";
+  return "text-green-600";
+}
+
+function nistBarColor(normScore: number): string {
+  if (normScore >= 70) return "#DC2626";
+  if (normScore >= 50) return "#EA580C";
+  if (normScore >= 25) return "#D97706";
+  return "#16A34A";
+}
+
+function matrixCellStyle(symbol: "✅" | "⚠️" | "❌"): string {
+  if (symbol === "✅") return "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400";
+  if (symbol === "⚠️") return "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400";
+  return "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400";
+}
+
+function generateComparisonHTML(c: ComparisonResult): string {
+  const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const levelBg = c.riskLevel === "CRITICAL" ? "#DC2626" : c.riskLevel === "HIGH" ? "#EA580C" : c.riskLevel === "MEDIUM" ? "#D97706" : "#16A34A";
+  const rows = c.breakdown.map((b) =>
+    `<tr style="border-bottom:1px solid #e5e7eb">
+      <td style="padding:6px 8px">${b.attackName}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700">${b.rawScore.toFixed(1)}%</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700">${b.normScore.toFixed(1)}</td>
+      <td style="padding:6px 8px;text-align:center">${b.pass ? "✅ PASS" : "❌ FAIL"}</td>
+      <td style="padding:6px 8px">${b.riskLevel}</td>
+    </tr>`).join("");
+  const actions = c.priorityActions.map((a, i) =>
+    `<div style="margin-bottom:12px;padding:10px;border:1px solid #e5e7eb;border-radius:6px">
+      <strong>${i + 1}. ${a.emoji} ${a.priority}: ${a.action}</strong><br/>
+      <span style="color:#6b7280">${a.detail}</span><br/>
+      <em>Mechanism: ${a.mechanism} | Addresses: ${a.attacksAddressed.join(", ")}</em>
+    </div>`).join("");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>SafeData Pipeline — Comparison Report</title>
+  <style>body{font-family:Arial,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:#111}
+  h1{font-size:20px}h2{font-size:15px;margin-top:24px;border-bottom:2px solid #e5e7eb;padding-bottom:4px}
+  table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f3f4f6;padding:6px 8px;text-align:left}
+  .badge{display:inline-block;padding:3px 10px;border-radius:4px;color:white;font-weight:700;background:${levelBg}}</style></head>
+  <body>
+  <div style="background:#1e3a5f;color:white;padding:16px;border-radius:8px;margin-bottom:24px">
+    <strong style="font-size:18px">SafeData Pipeline — NIST Comparison Report</strong><br/>
+    Government of India · MoSPI · Developed by AIRAVATA Technologies<br/>
+    <small>Generated: ${now}</small>
+  </div>
+  <h1>NIST Composite Risk Score: <span class="badge">${c.nistCRS} / 100 — ${c.riskLevel}</span></h1>
+  <p>${c.totalRun} attacks run · ${c.passCount} PASS · ${c.failCount} FAIL · Highest: ${c.worstAttack} (${c.worstNormScore} normalised)</p>
+  <h2>Score Breakdown</h2>
+  <table><thead><tr><th>Attack</th><th>Raw Score</th><th>Normalised</th><th>Status</th><th>Risk Level</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <h2>Priority Actions</h2>${actions}
+  </body></html>`;
+}
+
 function ComparisonDashboard({ results }: { results: AllResults }) {
   const c = results.composite;
-  if (!c) return <div className="text-center text-muted-foreground py-12">Run all attacks to see comparison dashboard.</div>;
 
-  const radarData = c.breakdown.map((b) => ({
-    attack: b.attack,
-    risk: b.enabled ? b.risk : 0,
-    safe: b.enabled ? Math.max(0, 30 - b.risk) : 0,
+  if (!c) {
+    return (
+      <div className="text-center text-muted-foreground py-16 space-y-2">
+        <BarChart3 className="h-10 w-10 mx-auto opacity-30" />
+        <p className="font-medium">Run the assessment to see the Comparison Dashboard</p>
+        <p className="text-xs">Click "Run Assessment" after selecting a dataset and configuring QI/SA columns.</p>
+      </div>
+    );
+  }
+
+  const scoreColor = nistLevelColor(c.nistCRS);
+
+  // §4.9 Plain English Summary paragraph
+  const worstRaw = c.breakdown.find((b) => b.attackName === c.worstAttack)?.rawScore ?? 0;
+  const diffFail = c.breakdown.find((b) => b.key === "differencing" && !b.pass);
+  const journPass = c.breakdown.find((b) => b.key === "journalist")?.pass;
+  const prosScore = c.breakdown.find((b) => b.key === "prosecutor")?.rawScore ?? 0;
+  const popUnique = results.journalist?.populationUniqueCount ?? 0;
+  const firstAction = c.priorityActions[0];
+
+  const plainEnglish = [
+    `This dataset scored ${c.nistCRS} out of 100 on the NIST Composite Risk Score — a ${c.riskLevel} privacy risk. Of ${c.totalRun} attacks tested, ${c.failCount} failed and ${c.passCount} passed.`,
+    `The highest risk comes from the ${c.worstAttack} attack (${worstRaw.toFixed(1)}% raw risk), which represents ${c.breakdown.find((b) => b.attackName === c.worstAttack)?.primaryThreat ?? "a significant privacy threat"}.`,
+    ...(diffFail ? ["IMPORTANT — This dataset is also vulnerable to the Differencing attack, which can reconstruct sensitive values from published aggregate statistics without any raw data access. k-anonymity alone cannot fix this; Differential Privacy noise must be applied before releasing any summary tables."] : []),
+    ...(journPass && prosScore > 5 ? [`Note — the Journalist score (lower than Prosecutor) reflects that sampling provides some population-level protection. However, ${popUnique > 0 ? `${popUnique} records remain uniquely identifiable even at population level and must be suppressed regardless.` : "population-level uniqueness may still persist."}`] : []),
+    ...(firstAction ? [`Recommended first action: ${firstAction.action}. Go to Privacy Enhancement to apply the recommended transformations, then re-run this assessment to verify improvement.`] : []),
+  ].join(" ");
+
+  // §4.3 Score breakdown bar data (normalised scores)
+  const normBarData = [...c.breakdown].sort((a, b) => b.normScore - a.normScore).map((b) => ({
+    name: b.attackName,
+    normScore: b.normScore,
+    rawScore: b.rawScore,
+    pass: b.pass,
+    color: nistBarColor(b.normScore),
   }));
 
-  const barData = [...c.breakdown]
-    .filter((b) => b.enabled)
-    .sort((a, b) => b.risk - a.risk)
-    .map((b) => ({
-      name: b.attack,
-      risk: b.risk,
-      color: RISK_COLORS[b.risk >= 70 ? "CRITICAL" : b.risk >= 50 ? "HIGH" : b.risk >= 30 ? "MEDIUM" : "LOW"],
-    }));
+  // §4.4 Raw score bar data
+  const rawBarData = [...c.breakdown].sort((a, b) => b.rawScore - a.rawScore).map((b) => ({
+    name: b.attackName,
+    rawScore: b.rawScore,
+    color: nistBarColor(b.normScore),
+  }));
 
-  const tableRows = [
-    { attack: "Prosecutor",           result: results.prosecutor,           key: "prosecutor" as AttackId,           threat: "Within-dataset re-ID",       metric: results.prosecutor ? `${results.prosecutor.uniqueRecordsCount} unique records` : "—" },
-    { attack: "Journalist",           result: results.journalist,           key: "journalist" as AttackId,           threat: "Pop. re-id risk",             metric: results.journalist ? `${results.journalist.atRiskCount} at-risk records` : "—" },
-    { attack: "Marketer",             result: results.marketer,             key: "marketer" as AttackId,             threat: "Group attribute disclosure",   metric: results.marketer ? `${(results.marketer.lDiversityPassRate * 100).toFixed(0)}% L-div pass` : "—" },
-    { attack: "Singling Out",         result: results.singlingOut,          key: "singlingOut" as AttackId,          threat: "GDPR/DPDP singling-out",      metric: results.singlingOut ? `${results.singlingOut.singulableCount} singulable` : "—" },
-    { attack: "Inference",            result: results.inference,            key: "inference" as AttackId,            threat: "ML attribute prediction",     metric: results.inference ? `${results.inference.infoGain}% info gain` : "—" },
-    { attack: "Membership",           result: results.membership,           key: "membership" as AttackId,           threat: "Presence detection",          metric: results.membership ? `AUC ${results.membership.aucScore.toFixed(2)}` : "—" },
-    { attack: "Record Linkage",       result: results.recordLinkage,        key: "recordLinkage" as AttackId,        threat: "External dataset re-ID",      metric: results.recordLinkage ? `${results.recordLinkage.numUniqueRecords} certain links` : "—" },
-    { attack: "Attr. Disclosure",     result: results.attributeDisclosure,  key: "attributeDisclosure" as AttackId,  threat: "Sensitive value inference",   metric: results.attributeDisclosure ? `ADR ${(results.attributeDisclosure.overallAdr * 100).toFixed(1)}%` : "—" },
-    { attack: "Differencing",         result: results.differencing,         key: "differencing" as AttackId,         threat: "Aggregate query leakage",     metric: results.differencing ? `DDR ${(results.differencing.ddr * 100).toFixed(1)}%` : "—" },
-    { attack: "Model Inversion",      result: results.modelInversion,       key: "modelInversion" as AttackId,       threat: "Attribute reconstruction",    metric: results.modelInversion ? `${results.modelInversion.inversionRate}% inverted` : "—" },
-  ];
-
-  const scoreColor = c.score >= 70 ? "text-red-600" : c.score >= 50 ? "text-orange-600" : c.score >= 30 ? "text-amber-600" : "text-green-600";
-
-  const priorityActions: { emoji: string; label: string; action: string }[] = [];
-  c.breakdown.sort((a, b) => b.risk - a.risk).forEach((b) => {
-    if (b.risk >= 0.7) priorityActions.push({ emoji: "🔴", label: "URGENT", action: `Mitigate ${b.attack} attack (${(b.risk * 100).toFixed(0)}% risk) — highest priority` });
-    else if (b.risk >= 0.5) priorityActions.push({ emoji: "🟡", label: "IMPORTANT", action: `Address ${b.attack} attack (${(b.risk * 100).toFixed(0)}% risk)` });
-    else if (b.risk >= 0.3) priorityActions.push({ emoji: "🟢", label: "OPTIONAL", action: `Consider mitigating ${b.attack} attack (${(b.risk * 100).toFixed(0)}% risk)` });
-  });
+  const handleExport = () => {
+    const html = generateComparisonHTML(c);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `SafeData_Comparison_${new Date().toISOString().slice(0, 10)}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
-      {/* Composite Score */}
-      <div className="grid md:grid-cols-3 gap-6">
-        <Card className="flex flex-col items-center justify-center p-6 text-center">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">NIST Composite Risk Score</div>
-          <div className={`text-6xl font-black ${scoreColor}`}>{c.score}</div>
-          <div className="text-sm text-muted-foreground mt-1">/ 100</div>
-          <div className="mt-1 text-xs text-muted-foreground">{c.enabledCount} of 10 attacks run</div>
-          <div className="mt-3">{riskBadge(c.riskLevel)}</div>
-          <div className="mt-4 w-full">
-            <Progress value={c.score} className="h-3" />
-            <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>0 LOW</span><span>30 MED</span><span>50 HIGH</span><span>70 CRIT</span></div>
-          </div>
-        </Card>
 
+      {/* §7.3 Partial results banner */}
+      {c.totalRun < 10 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+          ⚠️ Showing composite for <strong>{c.totalRun}/10</strong> attacks. Run all attacks for a complete score.
+          &nbsp;Missing: {["prosecutor","journalist","marketer","singlingOut","inference","membership","recordLinkage","attributeDisclosure","differencing","modelInversion"]
+            .filter((k) => !c.breakdown.some((b) => b.key === k))
+            .map((k) => ({ prosecutor:"Prosecutor", journalist:"Journalist", marketer:"Marketer", singlingOut:"Singling Out", inference:"Inference", membership:"Membership", recordLinkage:"Rec. Linkage", attributeDisclosure:"Attr. Disclose", differencing:"Differencing", modelInversion:"Model Inversion" } as Record<string,string>)[k])
+            .filter(Boolean).join(", ")}
+        </div>
+      )}
+
+      {/* §4.9 Plain English Summary */}
+      <Card className="border-l-4 border-l-blue-500">
+        <CardContent className="pt-4">
+          <p className="text-xs leading-relaxed text-muted-foreground">{plainEnglish}</p>
+        </CardContent>
+      </Card>
+
+      {/* §4.1 NIST Composite Score headline widget */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col items-center gap-2 mb-4">
+            <div className="text-xs uppercase tracking-widest text-muted-foreground font-semibold">NIST Composite Risk Score</div>
+            <div className={`text-7xl font-black leading-none ${scoreColor}`}>{c.nistCRS}</div>
+            <div className="text-sm text-muted-foreground">/ 100</div>
+            <div className="mt-1">{riskBadge(c.riskLevel)}</div>
+          </div>
+
+          {/* Gauge bar with zone markers */}
+          <div className="relative w-full h-6 rounded-full overflow-hidden bg-gradient-to-r from-green-400 via-yellow-400 via-orange-400 to-red-600">
+            <div className="absolute top-0 left-0 h-full bg-black/20 rounded-full" style={{ width: `${100 - c.nistCRS}%`, marginLeft: `${c.nistCRS}%` }} />
+            <div className="absolute top-0 h-full w-0.5 bg-white/60" style={{ left: "25%" }} />
+            <div className="absolute top-0 h-full w-0.5 bg-white/60" style={{ left: "50%" }} />
+            <div className="absolute top-0 h-full w-0.5 bg-white/60" style={{ left: "70%" }} />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-gray-800 shadow-lg"
+              style={{ left: `${c.nistCRS}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs mt-1 text-muted-foreground px-1">
+            <span>0 LOW</span><span className="ml-auto mr-auto" style={{ marginLeft: "15%" }}>25 MED</span>
+            <span className="ml-auto mr-auto" style={{ marginLeft: "15%" }}>50 HIGH</span>
+            <span className="ml-auto mr-auto" style={{ marginLeft: "10%" }}>70 CRIT</span>
+            <span>100</span>
+          </div>
+
+          {/* Pass/Fail tally */}
+          <div className="mt-3 text-center text-xs text-muted-foreground space-x-3">
+            <span><strong>{c.totalRun}/10</strong> attacks run</span>
+            <span>·</span>
+            <span className="text-green-600 font-semibold"><strong>{c.passCount}</strong> PASS</span>
+            <span>·</span>
+            <span className="text-red-600 font-semibold"><strong>{c.failCount}</strong> FAIL</span>
+            <span>·</span>
+            <span>Highest: <strong>{c.worstAttack}</strong> ({c.worstNormScore} normalised)</span>
+          </div>
+
+          <div className="mt-3 flex justify-end">
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleExport}>
+              <Download className="h-3 w-3" /> Download Report (HTML)
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* §4.2 + §4.3 side-by-side: Radar + Score Breakdown */}
+      <div className="grid md:grid-cols-2 gap-6">
+
+        {/* §4.2 6-Axis Risk Radar */}
         <Card>
-          <CardHeader><CardTitle className="text-sm">6-Axis Risk Radar</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">§4.2 6-Axis Risk Radar</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <RadarChart data={radarData}>
-                <PolarGrid />
-                <PolarAngleAxis dataKey="attack" tick={{ fontSize: 10 }} />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} />
-                <Radar name="Risk" dataKey="risk" stroke="#DC2626" fill="#DC2626" fillOpacity={0.3} />
+            <ResponsiveContainer width="100%" height={240}>
+              <RadarChart data={c.radarValues}>
+                <PolarGrid stroke="#e5e7eb" />
+                <PolarAngleAxis dataKey="axis" tick={{ fontSize: 9, fill: "#6b7280" }} />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 8, fill: "#9ca3af" }} tickCount={5} />
+                <Radar name="Risk" dataKey="value" stroke="#DC2626" fill="rgba(239,68,68,0.3)" strokeWidth={2} />
               </RadarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Score Breakdown</CardTitle></CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {c.breakdown.map((b) => (
-                <div key={b.attack} className="flex items-center gap-2">
-                  <span className={`text-xs w-20 truncate ${b.enabled ? "" : "text-muted-foreground/50"}`}>{b.attack}</span>
-                  {b.enabled ? (
-                    <>
-                      <Progress value={b.risk} className="flex-1 h-2" />
-                      <span className="text-xs font-bold w-12 text-right" style={{ color: RISK_COLORS[b.risk >= 70 ? "CRITICAL" : b.risk >= 50 ? "HIGH" : b.risk >= 30 ? "MEDIUM" : "LOW"] }}>
-                        {b.risk.toFixed(0)}%
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex-1 h-2 rounded-full bg-muted/30" />
-                      <span className="text-xs text-muted-foreground/50 w-12 text-right italic">—</span>
-                    </>
-                  )}
+            <div className="grid grid-cols-2 gap-1 mt-2">
+              {c.radarValues.map((rv) => (
+                <div key={rv.axis} className="flex justify-between text-xs px-1">
+                  <span className="text-muted-foreground truncate">{rv.axis}</span>
+                  <span className={`font-bold ml-2 ${rv.notRun ? "text-muted-foreground/50 italic" : rv.value >= 70 ? "text-red-600" : rv.value >= 50 ? "text-orange-600" : rv.value >= 25 ? "text-amber-600" : "text-green-600"}`}>
+                    {rv.notRun ? "—" : rv.value}
+                  </span>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
+
+        {/* §4.3 Score Breakdown — normalised scores */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">§4.3 Score Breakdown (Normalised)</CardTitle>
+            <CardDescription className="text-xs">Bars show threshold-relative danger (0=safe, 100=critical), not raw scores</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {normBarData.map((b) => (
+                <div key={b.name} className="flex items-center gap-2">
+                  <span className="text-xs w-24 shrink-0 truncate">{b.name}</span>
+                  <div className="flex-1 h-4 bg-muted/40 rounded overflow-hidden">
+                    <div className="h-full rounded transition-all" style={{ width: `${b.normScore}%`, backgroundColor: b.color }} />
+                  </div>
+                  <span className="text-xs font-bold w-8 text-right" style={{ color: b.color }}>{b.normScore.toFixed(0)}</span>
+                  <span className={`text-xs w-12 text-right font-semibold ${b.pass ? "text-green-600" : "text-red-600"}`}>
+                    {b.pass ? "✅" : "❌"} {b.rawScore.toFixed(0)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground border-t pt-2">
+              <span className="inline-block w-3 h-3 rounded bg-green-500 mr-1" />0–24 LOW &nbsp;
+              <span className="inline-block w-3 h-3 rounded bg-amber-400 mr-1" />25–49 MED &nbsp;
+              <span className="inline-block w-3 h-3 rounded bg-orange-500 mr-1" />50–69 HIGH &nbsp;
+              <span className="inline-block w-3 h-3 rounded bg-red-600 mr-1" />70–100 CRIT
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Bar chart */}
+      {/* §4.4 Attack Risk Comparison — raw scores horizontal bar chart */}
       <Card>
-        <CardHeader><CardTitle className="text-sm">Attack Risk Comparison (Sorted by Risk)</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">§4.4 Attack Risk Comparison — Raw Scores (Sorted by Risk)</CardTitle></CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={barData} layout="vertical">
+          <ResponsiveContainer width="100%" height={Math.max(180, c.breakdown.length * 32)}>
+            <BarChart data={rawBarData} layout="vertical" margin={{ left: 8, right: 32 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis type="number" tick={{ fontSize: 11 }} unit="%" domain={[0, 100]} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={80} />
-              <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v}%`} />
-              <Bar dataKey="risk" name="Risk Score" radius={[0, 4, 4, 0]}>
-                {barData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+              <XAxis type="number" tick={{ fontSize: 10 }} unit="%" domain={[0, 100]} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={88} />
+              <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => [`${v.toFixed(1)}%`, "Raw Score"]} />
+              <ReferenceLine x={5}  stroke="#16A34A" strokeDasharray="4 4" label={{ value: "Safe",  fontSize: 9, fill: "#16A34A", position: "insideTopRight" }} />
+              <ReferenceLine x={20} stroke="#D97706" strokeDasharray="4 4" label={{ value: "Med",   fontSize: 9, fill: "#D97706", position: "insideTopRight" }} />
+              <ReferenceLine x={50} stroke="#EA580C" strokeDasharray="4 4" label={{ value: "High",  fontSize: 9, fill: "#EA580C", position: "insideTopRight" }} />
+              <Bar dataKey="rawScore" name="Raw Score" radius={[0, 4, 4, 0]}>
+                {rawBarData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
-      {/* Summary table */}
+      {/* §4.5 Risk Summary Table */}
       <Card>
-        <CardHeader><CardTitle className="text-sm">Risk Summary Table</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">§4.5 Risk Summary Table</CardTitle></CardHeader>
         <CardContent>
-          <table className="w-full text-xs">
-            <thead><tr className="border-b"><th className="text-left pb-2">Attack</th><th className="text-right pb-2">Risk Score</th><th className="text-right pb-2">Risk Level</th><th className="text-left pb-2 pl-4">Primary Threat</th><th className="text-right pb-2">Key Metric</th><th className="text-right pb-2">Status</th></tr></thead>
-            <tbody>
-              {tableRows.map((row, i) => {
-                const risk = row.result ? row.result.riskScore : 0;
-                const level = row.result ? row.result.riskLevel : "LOW";
-                const status = risk >= 0.5 ? "❌ FAIL" : risk >= 0.3 ? "⚠️ WARN" : "✅ PASS";
-                return (
-                  <tr key={i} className="border-b border-muted">
-                    <td className="py-2 font-medium">{row.attack}</td>
-                    <td className="py-2 text-right font-bold">{(risk * 100).toFixed(1)}%</td>
-                    <td className="py-2 text-right">{riskBadge(level)}</td>
-                    <td className="py-2 pl-4 text-muted-foreground">{row.threat}</td>
-                    <td className="py-2 text-right text-muted-foreground">{row.metric}</td>
-                    <td className="py-2 text-right">{status}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left pb-2 pr-3">Attack</th>
+                  <th className="text-right pb-2 pr-3">Raw Score</th>
+                  <th className="text-right pb-2 pr-3">Normalised</th>
+                  <th className="text-right pb-2 pr-3">Risk Level</th>
+                  <th className="text-left pb-2 pr-3 pl-3">Primary Threat</th>
+                  <th className="text-right pb-2 pr-3">Key Metric</th>
+                  <th className="text-right pb-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.breakdown.map((row, i) => (
+                  <tr key={i} className="border-b border-muted hover:bg-muted/20">
+                    <td className="py-2 pr-3 font-semibold">{row.attackName}</td>
+                    <td className="py-2 pr-3 text-right font-bold" style={{ color: nistBarColor(row.normScore) }}>{row.rawScore.toFixed(1)}%</td>
+                    <td className="py-2 pr-3 text-right text-muted-foreground">{row.normScore.toFixed(1)}</td>
+                    <td className="py-2 pr-3 text-right">{riskBadge(row.riskLevel)}</td>
+                    <td className="py-2 pr-3 pl-3 text-muted-foreground">{row.primaryThreat}</td>
+                    <td className="py-2 pr-3 text-right text-muted-foreground font-mono">{row.keyMetric}</td>
+                    <td className="py-2 text-right font-bold">{row.pass ? <span className="text-green-600">✅ PASS</span> : <span className="text-red-600">❌ FAIL</span>}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Priority actions */}
-      {priorityActions.length > 0 && (
+      {/* §4.8 Priority Action List */}
+      {c.priorityActions.length > 0 && (
         <Card>
-          <CardHeader><CardTitle className="text-sm">Priority Action List</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">§4.8 Priority Action List</CardTitle></CardHeader>
           <CardContent>
-            <ul className="space-y-2">
-              {priorityActions.map((a, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <span>{a.emoji}</span>
-                  <span className="font-semibold w-16 shrink-0">{a.label}:</span>
-                  <span className="text-muted-foreground">{a.action}</span>
-                </li>
+            <div className="space-y-3">
+              {c.priorityActions.map((a, i) => (
+                <div key={i} className={`rounded-lg border p-3 ${a.priority === "URGENT" ? "border-red-300 bg-red-50 dark:bg-red-950/20" : a.priority === "HIGH" ? "border-orange-300 bg-orange-50 dark:bg-orange-950/20" : "border-amber-300 bg-amber-50 dark:bg-amber-950/20"}`}>
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm">{a.emoji}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${a.priority === "URGENT" ? "bg-red-600 text-white" : a.priority === "HIGH" ? "bg-orange-600 text-white" : "bg-amber-500 text-white"}`}>{a.priority}</span>
+                        <span className="text-xs font-semibold">{a.action}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{a.detail}</p>
+                      <div className="flex flex-wrap gap-3 mt-1.5">
+                        <span className="text-xs text-muted-foreground">→ <strong>Mechanism:</strong> {a.mechanism}</span>
+                        <span className="text-xs text-muted-foreground">→ <strong>Attacks addressed:</strong> {a.attacksAddressed.join(", ")}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               ))}
-            </ul>
+            </div>
           </CardContent>
         </Card>
       )}
+
+      {/* §4.6 Cross-Attack Comparison */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">§4.6 Cross-Attack Comparison — What Each Attack Tests</CardTitle>
+          <CardDescription className="text-xs">Educational reference for NSO officers — how the 10 attacks differ in threat model and defense</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="text-left pb-2 pr-3">Attack</th>
+                  <th className="text-left pb-2 pr-3">Ext. Data?</th>
+                  <th className="text-left pb-2 pr-3">Target</th>
+                  <th className="text-left pb-2 pr-3">What It Reveals</th>
+                  <th className="text-left pb-2 pr-3">Defeated By</th>
+                  <th className="text-left pb-2">DPDP 2023</th>
+                </tr>
+              </thead>
+              <tbody>
+                {THREAT_MODEL.map((row, i) => (
+                  <tr key={i} className="border-b border-muted align-top hover:bg-muted/20">
+                    <td className="py-2 pr-3 font-semibold">{row.attack}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{row.external}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{row.target}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{row.reveals}</td>
+                    <td className="py-2 pr-3 text-blue-600 dark:text-blue-400">{row.defeatedBy}</td>
+                    <td className="py-2 text-muted-foreground">{row.dpdp}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* §4.7 Protection Coverage Matrix */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">§4.7 Protection Coverage Matrix</CardTitle>
+          <CardDescription className="text-xs">Shows which privacy mechanisms protect against which attacks — use this to prioritise your fixes</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-muted-foreground text-center">
+                  <th className="text-left pb-2 pr-3">Attack</th>
+                  <th className="pb-2 px-2">k-Anonymity</th>
+                  <th className="pb-2 px-2">l-Diversity</th>
+                  <th className="pb-2 px-2">t-Closeness</th>
+                  <th className="pb-2 px-2">Diff. Privacy</th>
+                  <th className="pb-2 px-2">Outlier Supp.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PROTECTION_MATRIX.map((row, i) => (
+                  <tr key={i} className="border-b border-muted">
+                    <td className="py-1.5 pr-3 font-medium">{row.attack}</td>
+                    {([row.kAnon, row.lDiv, row.tClose, row.dp, row.outlier] as const).map((sym, j) => (
+                      <td key={j} className="py-1.5 px-2 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-xs ${matrixCellStyle(sym)}`}>{sym}</span>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-1 gap-1 text-xs text-muted-foreground border-t pt-3">
+            <p>Legend: <span className="text-green-600 font-semibold">✅ Effective</span> &nbsp; <span className="text-amber-600 font-semibold">⚠️ Partial</span> &nbsp; <span className="text-red-600 font-semibold">❌ Does NOT protect</span></p>
+          </div>
+          <div className="mt-3 grid md:grid-cols-2 gap-3">
+            {[
+              { mech: "k-Anonymity",          attacks: "Prosecutor, Journalist, Marketer, Singling Out, Rec. Linkage" },
+              { mech: "l-Diversity",           attacks: "Marketer, Inference, Attr. Disclose, Model Inversion" },
+              { mech: "t-Closeness",           attacks: "Inference, Attr. Disclose (partial), Model Inversion" },
+              { mech: "Differential Privacy",  attacks: "Differencing (primary), Membership (partial)" },
+              { mech: "Outlier Suppression",   attacks: "Prosecutor, Journalist, Marketer, Singling Out, Rec. Linkage, Membership" },
+            ].map((m) => (
+              <div key={m.mech} className="rounded border p-2">
+                <span className="font-semibold text-xs">{m.mech}:</span>
+                <span className="text-xs text-muted-foreground ml-1">{m.attacks}</span>
+              </div>
+            ))}
+          </div>
+          {c.failCount > 0 && (
+            <div className="mt-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 text-xs">
+              <strong>Interpretation:</strong> Increasing k-anonymity alone will fix {
+                c.breakdown.filter((b) => !b.pass && ["prosecutor","journalist","marketer","singlingOut","recordLinkage"].includes(b.key)).length
+              } of your {c.failCount} failing attacks. Apply l-diversity next to address Inference, Attribute Disclosure, and Model Inversion.{
+                c.breakdown.some((b) => b.key === "differencing" && !b.pass)
+                  ? " Differencing requires Differential Privacy noise — it cannot be fixed by k-anonymity or l-diversity."
+                  : ""
+              }
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
     </div>
   );
 }
@@ -5160,20 +5469,25 @@ export default function RiskPage() {
       await new Promise((r) => setTimeout(r, 20));
     }
 
-    // Composite score — only pass scores for attacks that were actually run.
-    // Unrun attacks are omitted (undefined) so they don't dilute the average.
-    newResults.composite = computeCompositeScore({
-      ...(newResults.prosecutor          && { prosecutor:          newResults.prosecutor.riskScore }),
-      ...(newResults.journalist          && { journalist:          newResults.journalist.riskScore }),
-      ...(newResults.marketer            && { marketer:            newResults.marketer.riskScore }),
-      ...(newResults.singlingOut         && { singlingOut:         newResults.singlingOut.riskScore }),
-      ...(newResults.inference           && { inference:           newResults.inference.riskScore }),
-      ...(newResults.membership          && { membership:          newResults.membership.riskScore }),
-      ...(newResults.recordLinkage       && { recordLinkage:       newResults.recordLinkage.riskScore }),
-      ...(newResults.attributeDisclosure && { attributeDisclosure: newResults.attributeDisclosure.riskScore }),
-      ...(newResults.differencing        && { differencing:        newResults.differencing.riskScore }),
-      ...(newResults.modelInversion      && { modelInversion:      newResults.modelInversion.riskScore }),
-    });
+    // Composite score — pass full result objects so canonical score fields and
+    // priority-action details (singletons, ADR, DDR, etc.) are all available.
+    newResults.composite = computeCompositeScore(
+      {
+        prosecutor:          newResults.prosecutor,
+        journalist:          newResults.journalist,
+        marketer:            newResults.marketer,
+        singlingOut:         newResults.singlingOut,
+        inference:           newResults.inference,
+        membership:          newResults.membership,
+        recordLinkage:       newResults.recordLinkage,
+        attributeDisclosure: newResults.attributeDisclosure,
+        differencing:        newResults.differencing,
+        modelInversion:      newResults.modelInversion,
+      },
+      kThreshold[0],
+      lThreshold[0],
+      tThreshold[0] / 100,
+    );
 
     setResults(newResults);
     setProgress(null);
