@@ -468,76 +468,416 @@ function ProsecutorReport({ r, kThreshold }: { r: ProsecutorResult; kThreshold: 
   );
 }
 
-function JournalistReport({ r }: { r: JournalistResult }) {
+function JournalistReport({ r, kThreshold }: { r: JournalistResult; kThreshold: number }) {
+  const [filterMode, setFilterMode] = useState<"all" | "atRisk" | "protected">("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const qis = r.quasiIdentifiers;
+  const riskColor = r.reIdRisk > 0.2 ? "text-red-600" : r.reIdRisk > 0.05 ? "text-amber-600" : "text-green-600";
+  const riskLabel = r.reIdRisk > 0.2 ? "HIGH" : r.reIdRisk > 0.05 ? "MEDIUM" : "LOW";
+  const bannerBorder = r.reIdRisk > 0.2
+    ? "border-red-400 bg-red-50 dark:bg-red-950/20"
+    : r.reIdRisk > 0.05
+    ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20"
+    : "border-green-400 bg-green-50 dark:bg-green-950/20";
+
+  const filtered = r.recordTable.filter((row) => {
+    if (filterMode === "atRisk" && !row.atRisk) return false;
+    if (filterMode === "protected" && row.atRisk) return false;
+    if (search) {
+      const haystack = qis.map((qi) => row.qiValues[qi] ?? "").join(" ").toLowerCase();
+      if (!haystack.includes(search.toLowerCase())) return false;
+    }
+    return true;
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const riskReductionPp = ((r.prosecutorReIdRisk - r.reIdRisk) * 100).toFixed(1);
+  const commonQIs = qis.slice(0, 3).join(", ") + (qis.length > 3 ? `, +${qis.length - 3} more` : "");
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiCard("Journalist Risk", `${(r.riskScore * 100).toFixed(1)}%`, "Mean 1/k across records", <Eye className="h-4 w-4" />, "text-red-600")}
-        {kpiCard("K-Violations", r.violations, `Records below k-threshold`, <XCircle className="h-4 w-4" />, "text-orange-600")}
-        {kpiCard("Entropy H_norm", r.hNorm.toFixed(3), "0 = uniform, 1 = diverse", <BarChart3 className="h-4 w-4" />)}
-        {kpiCard("Risk Lift", `${r.riskLift}×`, "vs random guessing", <AlertTriangle className="h-4 w-4" />, r.riskLift > 10 ? "text-red-600" : "text-amber-600")}
+
+      {/* ── §6.1 Attack Summary Banner ─────────────────────────────────────── */}
+      <div className={`rounded-lg border-2 p-4 ${bannerBorder}`}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-bold text-sm uppercase tracking-wider">📰 Journalist Attack Results</span>
+          <span className={`text-xs font-bold px-2 py-1 rounded border ${r.reIdRisk > 0.2 ? "bg-red-100 text-red-700 border-red-300" : r.reIdRisk > 0.05 ? "bg-amber-100 text-amber-700 border-amber-300" : "bg-green-100 text-green-700 border-green-300"}`}>
+            RISK LEVEL: {riskLabel}
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground mb-2 flex flex-wrap gap-3">
+          <span>Rows analysed: <strong>{r.sampleN}</strong></span>
+          <span>QIs used: <strong>{qis.join(", ") || "—"}</strong></span>
+          <span>Population method: <strong>{r.multiplierUsed ? "Multiplier_comb (expansion factors)" : `Sampling fraction (${(r.samplingFraction * 100).toFixed(0)}%)`}</strong></span>
+        </div>
+        <p className="text-sm leading-relaxed">
+          A journalist with access to a public population register (but who does <em>NOT</em> know if their target is in this dataset) can correctly identify{" "}
+          <strong className={riskColor}>{(r.reIdRisk * 100).toFixed(1)}%</strong> of individuals using only <em>{commonQIs}</em>.
+          {" "}This is{" "}
+          {r.reIdRisk < r.prosecutorReIdRisk
+            ? <><strong className="text-green-600">{riskReductionPp}pp lower</strong> than the Prosecutor risk of <strong>{(r.prosecutorReIdRisk * 100).toFixed(1)}%</strong>, because {r.sampleN - r.populationUniqueCount} records that may look unique in this sample correspond to combinations shared by multiple people in the wider population.</>
+            : <><strong>equal</strong> to the Prosecutor risk — the sampling fraction is 100% or Multiplier_comb collapses to the sample size.</>}
+        </p>
       </div>
+
+      {/* ── §6.2 Key Metrics Row (5 cards) ───────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {kpiCard("Journalist Re-ID Risk", `${(r.reIdRisk * 100).toFixed(1)}%`, "Avg chance journalist correctly IDs a person, accounting for sampling", <Eye className="h-4 w-4" />, r.reIdRisk > 0.2 ? "text-red-600" : r.reIdRisk > 0.05 ? "text-amber-600" : "text-green-600")}
+        <Card className="border-dashed opacity-80">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Prosecutor Risk (ref.)</CardTitle>
+            <Target className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-muted-foreground">{(r.prosecutorReIdRisk * 100).toFixed(1)}%</div>
+            <p className="text-xs text-muted-foreground mt-1">Worst-case if attacker knows target is sampled</p>
+          </CardContent>
+        </Card>
+        {kpiCard("Population-Unique", r.populationUniqueCount, "Records unique even in the full population", <Fingerprint className="h-4 w-4" />, r.populationUniqueCount > 0 ? "text-red-600" : "text-green-600")}
+        {kpiCard("Avg Population EC", r.avgPopulationEcSize.toFixed(1), "Mean group size sharing same QIs in population", <Users className="h-4 w-4" />, r.avgPopulationEcSize < kThreshold ? "text-red-600" : "text-green-600")}
+        {kpiCard("Min Population EC", r.minPopulationEcSize.toFixed(1), "Smallest estimated population group — worst-case", <AlertTriangle className="h-4 w-4" />, r.minPopulationEcSize < kThreshold ? "text-red-600" : "text-green-600")}
+      </div>
+
+      {/* ── §6.3 Record-Level Attack Trace Table ─────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-sm">Record-Level Attack Trace — Dual Status View ({filtered.length} records)</CardTitle>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Each record shows both its <strong>sample EC size</strong> (Prosecutor view) and its <strong>estimated population EC size</strong> (Journalist view).
+            A record can be "At Risk" under Prosecutor but "Protected" under Journalist — this dual status is the core insight.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <div className="flex gap-1">
+              {(["all", "atRisk", "protected"] as const).map((m) => (
+                <button key={m} onClick={() => { setFilterMode(m); setPage(1); }}
+                  className={`px-2 py-1 text-xs rounded border transition-colors ${filterMode === m ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}>
+                  {m === "all" ? "Show All" : m === "atRisk" ? "🔴 At Risk (Population)" : "🟢 Protected (Population)"}
+                </button>
+              ))}
+            </div>
+            <div className="relative flex-1 min-w-[140px]">
+              <Filter className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+              <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder="Search QI values..." className="h-7 text-xs pl-6" />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-3 py-2">Row #</th>
+                  {qis.map((qi) => <th key={qi} className="text-left px-2 py-2 truncate max-w-[80px]" title={qi}>{qi.length > 10 ? qi.slice(0, 10) + "…" : qi}</th>)}
+                  <th className="text-right px-2 py-2">Sample EC</th>
+                  <th className="text-right px-2 py-2">Pop. EC</th>
+                  <th className="text-right px-2 py-2">Prosecutor</th>
+                  <th className="text-right px-2 py-2">Journalist</th>
+                  <th className="text-left px-3 py-2">Dual Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.length === 0 ? (
+                  <tr><td colSpan={qis.length + 7} className="text-center py-8 text-muted-foreground">No records match the current filter.</td></tr>
+                ) : pageRows.map((row) => {
+                  const prosecutorAtRisk = row.atRiskProsecutor;
+                  const journalistAtRisk = row.atRisk;
+                  let dualLabel: string;
+                  let dualCls: string;
+                  if (row.prosecutorLinkScore === 1.0 && row.journalistLinkScore < 0.5) {
+                    dualLabel = "🟡 SAMPLE-UNIQUE / POP-SAFE";
+                    dualCls = "text-amber-600 font-semibold";
+                  } else if (row.journalistLinkScore >= 0.5) {
+                    dualLabel = "🔴 AT RISK (both models)";
+                    dualCls = "text-red-600 font-bold";
+                  } else if (prosecutorAtRisk && !journalistAtRisk) {
+                    dualLabel = "🟡 REDUCED RISK (journalist)";
+                    dualCls = "text-amber-600";
+                  } else {
+                    dualLabel = "🟢 PROTECTED";
+                    dualCls = "text-green-600";
+                  }
+                  return (
+                    <tr key={row.rowIdx} className="border-b border-muted hover:bg-muted/20">
+                      <td className="px-3 py-1.5 text-muted-foreground">{row.rowIdx}</td>
+                      {qis.map((qi) => <td key={qi} className="px-2 py-1.5 truncate max-w-[80px]">{row.qiValues[qi] ?? ""}</td>)}
+                      <td className="px-2 py-1.5 text-right font-medium">{row.ecSizeSample}</td>
+                      <td className="px-2 py-1.5 text-right font-medium text-blue-600">{row.ecSizePopulation}</td>
+                      <td className={`px-2 py-1.5 text-right font-bold ${row.prosecutorLinkScore >= 0.5 ? "text-red-600" : row.prosecutorLinkScore >= 0.2 ? "text-amber-600" : "text-green-600"}`}>{row.prosecutorLinkScore.toFixed(3)}</td>
+                      <td className={`px-2 py-1.5 text-right font-bold ${row.journalistLinkScore >= 0.5 ? "text-red-600" : row.journalistLinkScore >= 0.2 ? "text-amber-600" : "text-green-600"}`}>{row.journalistLinkScore.toFixed(3)}</td>
+                      <td className={`px-3 py-1.5 text-xs ${dualCls}`}>{dualLabel}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-3 py-2 border-t text-xs text-muted-foreground">
+              <span>Page {safePage} of {totalPages} ({filtered.length} records)</span>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}><ChevronLeft className="h-3 w-3" /></Button>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}><ChevronRight className="h-3 w-3" /></Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── §6.4 Attack Narrative ─────────────────────────────────────────────── */}
+      {r.topVulnerableRecord && (
+        <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-blue-800 dark:text-blue-200">📰 Attack Simulation — How the Journalist Attack Works on YOUR Data</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs font-mono space-y-2 text-blue-900 dark:text-blue-100">
+            <div><strong>Step 1 — Attacker's Knowledge</strong><br />
+              The journalist knows person X exists in the general population (e.g., via Census/voter records) with:<br />
+              {qis.map((qi) => <span key={qi} className="block ml-4">{qi} = {r.topVulnerableRecord!.qiValues[qi]}</span>)}
+              They do <em>NOT</em> know if X is in this particular survey sample.
+            </div>
+            <div><strong>Step 2 — Population Estimate</strong><br />
+              Using {r.multiplierUsed ? "Multiplier_comb (expansion weights)" : `a ${(r.samplingFraction * 100).toFixed(0)}% sampling fraction`}, an estimated{" "}
+              <strong>{r.topVulnerableRecord!.ecSizePopulation}</strong> people in the full population share this exact QI combination.
+            </div>
+            <div><strong>Step 3 — Sample Match</strong><br />
+              In the released sample, <strong>{r.topVulnerableRecord!.ecSizeSample}</strong> record(s) match this QI combination (Prosecutor view: 100% certainty).
+            </div>
+            <div><strong>Step 4 — Re-identification Confidence</strong><br />
+              Even with {r.topVulnerableRecord!.ecSizeSample === 1 ? "a singleton match" : `${r.topVulnerableRecord!.ecSizeSample} matching records`} in the sample, the journalist can only be{" "}
+              <strong className={r.topVulnerableRecord!.journalistLinkScore >= 0.5 ? "text-red-600" : "text-amber-600"}>
+                {(r.topVulnerableRecord!.journalistLinkScore * 100).toFixed(1)}%
+              </strong>{" "}
+              confident this record is person X, because {Math.max(0, r.topVulnerableRecord!.ecSizePopulation - 1).toFixed(1)} other people in the population share the same QI combination.
+            </div>
+            <div><strong>Step 5 — Scale</strong><br />
+              <strong>{r.populationUniqueCount}</strong> out of <strong>{r.sampleN}</strong> records remain unique at population level (Prosecutor-level risk even under the Journalist model).<br />
+              <strong>{r.sampleN > 0 ? (((r.sampleN - r.atRiskCount) / r.sampleN) * 100).toFixed(1) : 0}%</strong> of the dataset shows reduced risk under the Journalist model vs the Prosecutor model.
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── §6.5 Prosecutor vs Journalist Comparison Chart ───────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Prosecutor vs Journalist Link Score Distribution</CardTitle>
+          <p className="text-xs text-muted-foreground">Sampling provides "plausible deniability" — records shift from high-risk Prosecutor buckets to lower-risk Journalist buckets.</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid md:grid-cols-2 gap-6">
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={r.comparisonChart}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="bucket" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip {...CHART_TOOLTIP} />
+                <Legend />
+                <Bar dataKey="prosecutorCount" name="Prosecutor" fill="#DC2626" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="journalistCount" name="Journalist" fill="#2563EB" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <table className="text-xs self-start">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left pb-2">Score Range</th>
+                  <th className="text-right pb-2"># Prosecutor</th>
+                  <th className="text-right pb-2"># Journalist</th>
+                  <th className="text-right pb-2">Δ Reduction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.comparisonChart.map((row, i) => (
+                  <tr key={i} className="border-b border-muted">
+                    <td className="py-1.5 font-medium" style={{ color: ["#DC2626","#EA580C","#D97706","#16A34A","#16A34A"][i] }}>{row.bucket}</td>
+                    <td className="py-1.5 text-right font-bold text-red-600">{row.prosecutorCount}</td>
+                    <td className="py-1.5 text-right font-bold text-blue-600">{row.journalistCount}</td>
+                    <td className={`py-1.5 text-right font-bold ${row.delta > 0 ? "text-green-600" : row.delta < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                      {row.delta > 0 ? `−${row.delta}` : row.delta < 0 ? `+${Math.abs(row.delta)}` : "0"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── §6.6 Population EC Size Distribution ─────────────────────────────── */}
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-sm">EC Distribution + Avg Risk</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">Population EC Size Distribution (Chart)</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={r.histogram}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} unit="%" />
-                <Tooltip {...CHART_TOOLTIP} />
-                <Bar yAxisId="left" dataKey="count" fill="#2563EB" radius={[4, 4, 0, 0]} name="Records" />
-                <Line yAxisId="right" type="monotone" dataKey="avgRisk" stroke="#DC2626" strokeWidth={2} dot={false} name="Avg Risk %" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Information Gain by Quasi-Identifier</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={r.infoGain} layout="vertical">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={r.populationHistogram} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="qi" tick={{ fontSize: 10 }} width={90} />
+                <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={75} />
                 <Tooltip {...CHART_TOOLTIP} />
-                <Bar dataKey="gain" fill="#EA580C" radius={[0, 4, 4, 0]} name="Info Gain" />
+                <Bar dataKey="numRecords" radius={[0, 4, 4, 0]} name="Records">
+                  {r.populationHistogram.map((_, i) => <Cell key={i} fill={EC_BUCKET_COLORS[i] ?? "#16A34A"} />)}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-sm">Risk–Protection Donut</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">Population EC Size Distribution (Table)</CardTitle></CardHeader>
+          <CardContent>
+            <table className="w-full text-xs">
+              <thead><tr className="border-b"><th className="text-left pb-2">Pop. EC Size</th><th className="text-right pb-2"># ECs</th><th className="text-right pb-2"># Records</th><th className="text-right pb-2">% Dataset</th></tr></thead>
+              <tbody>
+                {r.populationHistogram.map((row, i) => (
+                  <tr key={i} className="border-b border-muted">
+                    <td className="py-1.5 font-medium" style={{ color: EC_BUCKET_COLORS[i] }}>{row.label}</td>
+                    <td className="py-1.5 text-right">{row.numECs}</td>
+                    <td className="py-1.5 text-right">{row.numRecords}</td>
+                    <td className="py-1.5 text-right font-bold" style={{ color: EC_BUCKET_COLORS[i] }}>{row.pct}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── §6.7 L-Diversity Results (sample-based, identical to Prosecutor) ─── */}
+      {r.lDiversityResults.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">L-Diversity Check (sample-based — independent of attacker model)</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {r.lDiversityResults.map((res, i) => (
+              <div key={i} className={`p-3 rounded-lg border ${res.status === "FAIL" ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-green-300 bg-green-50 dark:bg-green-950/20"}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm">Sensitive Attribute: <code>{res.sa}</code></span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${res.status === "FAIL" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{res.status === "FAIL" ? "🔴 FAIL" : "🟢 PASS"}</span>
+                </div>
+                <div className="text-xs space-y-0.5 text-muted-foreground">
+                  <div>Min distinct values in any EC: <strong>{res.minL}</strong></div>
+                  <div>ECs violating l-diversity: <strong className={res.violatingEcs > 0 ? "text-red-600" : "text-green-600"}>{res.violatingEcs} out of {res.totalEcs}</strong> ({res.totalEcs > 0 ? ((res.violatingEcs/res.totalEcs)*100).toFixed(0) : 0}%)</div>
+                  {res.status === "FAIL" && <div className="italic mt-1">In some groups, all records share the same {res.sa} value — an attacker who links to the group learns {res.sa} with certainty, regardless of journalist/prosecutor model.</div>}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── §6.8 T-Closeness Results ──────────────────────────────────────────── */}
+      {r.tClosenessResults.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">T-Closeness Check (Total Variation Distance — sample-based)</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {r.tClosenessResults.map((res, i) => (
+              <div key={i} className={`p-3 rounded-lg border ${res.status === "FAIL" ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-green-300 bg-green-50 dark:bg-green-950/20"}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm">Sensitive Attribute: <code>{res.sa}</code></span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${res.status === "FAIL" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{res.status === "FAIL" ? "🔴 FAIL" : "🟢 PASS"}</span>
+                </div>
+                <div className="text-xs space-y-0.5 text-muted-foreground">
+                  <div>Maximum EC deviation from global distribution: <strong className={res.maxDistance > 0.3 ? "text-red-600" : "text-green-600"}>{res.maxDistance}</strong></div>
+                  <div>ECs violating t-closeness: <strong className={res.violatingEcs > 0 ? "text-red-600" : "text-green-600"}>{res.violatingEcs} out of {res.totalEcs}</strong></div>
+                  {res.status === "FAIL" && <div className="italic mt-1">The distribution of {res.sa} inside some groups differs significantly from the overall dataset distribution.</div>}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── §6.9 Methodology Disclosure (mandatory) ──────────────────────────── */}
+      <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/10 dark:border-blue-900">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+            <Info className="h-4 w-4" /> ℹ️ Methodology Note — Population Estimation
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-blue-800 dark:text-blue-200 space-y-2">
+          <p>Population EC sizes in this report are <strong>estimates</strong> based on:</p>
+          <div className="ml-2 space-y-1">
+            <div className={`flex items-center gap-2 ${r.multiplierUsed ? "font-semibold" : "text-muted-foreground"}`}>
+              {r.multiplierUsed ? "✓" : "○"} <span>Multiplier_comb column (NSS survey expansion factors)</span>
+            </div>
+            <div className={`flex items-center gap-2 ${!r.multiplierUsed ? "font-semibold" : "text-muted-foreground"}`}>
+              {!r.multiplierUsed ? "✓" : "○"} <span>Global sampling fraction = {(r.samplingFraction * 100).toFixed(0)}% (Multiplier_comb {r.multiplierUsed ? "used above" : "not available"})</span>
+            </div>
+          </div>
+          <p className="mt-2">
+            These estimates assume the sampling design is <strong>uniform across QI groups</strong>.
+            Actual population uniqueness may differ. Treat Journalist Re-ID Risk as an{" "}
+            <strong>indicative lower bound</strong>, not an exact figure.
+            The Prosecutor Re-ID Risk ({(r.prosecutorReIdRisk * 100).toFixed(1)}%) remains the exact, conservative upper bound.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* ── §6.10 Risk–Protection Donut (population-based) ───────────────────── */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Risk–Protection Split — Population Model (Real Counts)</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie data={[
-                  { name: "At Risk", value: parseFloat((r.violationRate * 100).toFixed(1)) },
-                  { name: "Protected", value: parseFloat(((1 - r.violationRate) * 100).toFixed(1)) },
+                  { name: `At Risk (${r.atRiskCount})`, value: r.atRiskCount },
+                  { name: `Protected (${r.protectedCount})`, value: r.protectedCount },
                 ]} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={2} dataKey="value">
                   <Cell fill="#DC2626" />
                   <Cell fill="#16A34A" />
                 </Pie>
-                <Tooltip {...CHART_TOOLTIP} />
+                <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v} records`} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Entropy Gauge</CardTitle></CardHeader>
-          <CardContent className="flex flex-col items-center justify-center h-[200px] gap-4">
-            <div className="text-4xl font-bold">{r.hNorm.toFixed(3)}</div>
-            <div className="text-sm text-muted-foreground">Normalized Shannon Entropy</div>
-            <div className="w-full">
-              <Progress value={r.hNorm * 100} className="h-4" />
-              <div className="flex justify-between text-xs mt-1 text-muted-foreground"><span>0 (Uniform)</span><span>1 (Max Diverse)</span></div>
+            <div className="text-center text-xs text-muted-foreground mt-2">
+              At Risk: {r.atRiskCount} records ({r.sampleN > 0 ? ((r.atRiskCount / r.sampleN) * 100).toFixed(1) : 0}%) — Population EC &lt; k={kThreshold}<br />
+              Protected: {r.protectedCount} records ({r.sampleN > 0 ? ((r.protectedCount / r.sampleN) * 100).toFixed(1) : 0}%) — Population EC ≥ k
             </div>
           </CardContent>
         </Card>
+
+        {/* ── §6.11 Top Vulnerable Records ────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Top 10 Vulnerable Records (by Journalist Score)</CardTitle>
+            <p className="text-xs text-muted-foreground">Ranked by journalist link score. Records with population-unique QI combos are listed first.</p>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[220px]">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left pb-1">Rank</th>
+                    <th className="text-left pb-1">QI Combination</th>
+                    <th className="text-right pb-1">Sample EC</th>
+                    <th className="text-right pb-1">Pop. EC</th>
+                    <th className="text-right pb-1">J. Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.topVulnerable.map((row, i) => (
+                    <tr key={i} className="border-b border-muted">
+                      <td className="py-1 pr-2 text-muted-foreground">{i + 1}</td>
+                      <td className="py-1 pr-2 text-muted-foreground truncate max-w-[130px]" title={row.qiCombo}>{row.qiCombo.slice(0, 35)}{row.qiCombo.length > 35 ? "…" : ""}</td>
+                      <td className="py-1 text-right">{row.ecSizeSample}</td>
+                      <td className="py-1 text-right text-blue-600 font-medium">{row.ecSizePopulation}</td>
+                      <td className="py-1 text-right font-bold text-red-600">{row.journalistLinkScore.toFixed(3)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* ── §6.12 Recommendations ─────────────────────────────────────────────── */}
       <RecommendationsCard recs={r.recommendations} />
     </div>
   );
@@ -1434,7 +1774,7 @@ export default function RiskPage() {
     const steps: { id: string; label: string; fn: () => void }[] = [];
 
     if (selectedAttacks.includes("prosecutor"))          steps.push({ id: "prosecutor",          label: "Prosecutor Attack (Within-Dataset Re-ID)...",         fn: () => { newResults.prosecutor          = runProsecutorAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal); } });
-    if (selectedAttacks.includes("journalist"))          steps.push({ id: "journalist",          label: "Journalist Attack (Probabilistic Re-ID)...",           fn: () => { newResults.journalist          = runJournalistAttack(rawData, quasiIdentifiers, kThreshold[0]); } });
+    if (selectedAttacks.includes("journalist"))          steps.push({ id: "journalist",          label: "Journalist Attack (Population-Based Re-ID)...",        fn: () => { newResults.journalist          = runJournalistAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal, samplePct[0]); } });
     if (selectedAttacks.includes("marketer"))            steps.push({ id: "marketer",            label: "Marketer Attack (L-Diversity & T-Closeness)...",       fn: () => { newResults.marketer            = runMarketerAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0], tVal); } });
     if (selectedAttacks.includes("singlingOut"))         steps.push({ id: "singlingOut",         label: "Singling Out Attack (GDPR Singling-Out Standard)...",   fn: () => { newResults.singlingOut         = runSingleOutAttack(rawData, allCols, kThreshold[0]); } });
     if (selectedAttacks.includes("inference"))           steps.push({ id: "inference",           label: "Inference Attack (CART Decision Tree)...",              fn: () => { newResults.inference           = runInferenceAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
@@ -1945,7 +2285,7 @@ export default function RiskPage() {
                   {results[a.id] ? (
                     <>
                       {a.id === "prosecutor"          && <ProsecutorReport r={results.prosecutor!} kThreshold={kThreshold[0]} />}
-                      {a.id === "journalist"          && <JournalistReport r={results.journalist!} />}
+                      {a.id === "journalist"          && <JournalistReport r={results.journalist!} kThreshold={kThreshold[0]} />}
                       {a.id === "marketer"            && <MarketerReport r={results.marketer!} />}
                       {a.id === "singlingOut"         && <SinglingOutReport r={results.singlingOut!} />}
                       {a.id === "inference"           && <InferenceReport r={results.inference!} />}
