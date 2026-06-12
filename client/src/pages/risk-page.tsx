@@ -31,7 +31,7 @@ import { runMarketerAttack, type MarketerResult } from "@/lib/attacks/marketerAt
 import { runSingleOutAttack, type SingleOutResult } from "@/lib/attacks/singleOutAttack";
 import { runInferenceAttack, type InferenceResult } from "@/lib/attacks/inferenceAttack";
 import { runMembershipAttack, type MembershipResult } from "@/lib/attacks/membershipAttack";
-import { runRecordLinkageAttack, type RecordLinkageResult } from "@/lib/attacks/recordLinkageAttack";
+import { runRecordLinkageAttack, type RecordLinkageResult, type LinkageOutcome } from "@/lib/attacks/recordLinkageAttack";
 import { runAttributeDisclosureAttack, type AttributeDisclosureResult } from "@/lib/attacks/attributeDisclosureAttack";
 import { runDifferencingAttack, type DifferencingResult } from "@/lib/attacks/differencingAttack";
 import { runModelInversionAttack, type ModelInversionResult } from "@/lib/attacks/modelInversionAttack";
@@ -3085,90 +3085,456 @@ function MembershipReport({ r }: { r: MembershipResult }) {
   );
 }
 
-function RecordLinkageReport({ r }: { r: RecordLinkageResult }) {
-  const linkedPct = r.totalRecords > 0 ? ((r.linkedRecords / r.totalRecords) * 100).toFixed(1) : "0.0";
-  const perfectPct = r.totalRecords > 0 ? ((r.perfectLinks / r.totalRecords) * 100).toFixed(1) : "0.0";
+const OUTCOME_COLOR: Record<LinkageOutcome, string> = {
+  Certain:   "#DC2626",
+  Probable:  "#EA580C",
+  Possible:  "#D97706",
+  Protected: "#16A34A",
+};
+const OUTCOME_BG: Record<LinkageOutcome, string> = {
+  Certain:   "bg-red-100 text-red-700",
+  Probable:  "bg-orange-100 text-orange-700",
+  Possible:  "bg-amber-100 text-amber-700",
+  Protected: "bg-green-100 text-green-700",
+};
+
+function RecordLinkageReport({ r, kThreshold }: { r: RecordLinkageResult; kThreshold: number }) {
+  const [filterMode, setFilterMode] = useState<"all" | "Certain" | "Probable" | "Possible" | "Protected">("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const qis = r.quasiIdentifiers;
+  const eclrPct = (r.eclr * 100).toFixed(1);
+  const wclrPct = (r.wclr * 100).toFixed(1);
+  const riskColor = r.eclr > 0.2 ? "text-red-600" : r.eclr > 0.05 ? "text-amber-600" : "text-green-600";
+  const riskLabel = r.eclr > 0.2 ? "HIGH" : r.eclr > 0.05 ? "MEDIUM" : "LOW";
+  const bannerBorder = r.eclr > 0.2
+    ? "border-red-400 bg-red-50 dark:bg-red-950/20"
+    : r.eclr > 0.05
+    ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20"
+    : "border-green-400 bg-green-50 dark:bg-green-950/20";
+
+  const filtered = r.recordTable.filter((row) => {
+    if (filterMode !== "all" && row.linkageOutcome !== filterMode) return false;
+    if (search) {
+      const haystack = qis.map((qi) => row.qiValues[qi] ?? "").join(" ").toLowerCase();
+      if (!haystack.includes(search.toLowerCase())) return false;
+    }
+    return true;
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const csvExport = () => {
+    const header = ["Row", ...qis, "EC Size", "Link Score", "Outcome"].join(",");
+    const rows = r.recordTable.map((row) =>
+      [row.rowIdx, ...qis.map((qi) => `"${row.qiValues[qi] ?? ""}"`), row.ecSize, row.linkScore, row.linkageOutcome].join(",")
+    );
+    const blob = new Blob([header + "\n" + rows.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "record_linkage_trace.csv";
+    a.click();
+  };
+
+  const donutData = [
+    { name: `Certain (${r.numUniqueRecords})`,  value: r.numUniqueRecords,  fill: "#DC2626" },
+    { name: `Probable (${r.numProbable})`,       value: r.numProbable,       fill: "#EA580C" },
+    { name: `Possible (${r.numPossible})`,       value: r.numPossible,       fill: "#D97706" },
+    { name: `Protected (${r.numProtected})`,     value: r.numProtected,      fill: "#16A34A" },
+  ];
+
+  const topRecord = r.topVulnerableRecord;
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiCard("Linkage Risk", `${(r.riskScore * 100).toFixed(1)}%`, "Σ(1/matches) / N", <Network className="h-4 w-4" />, "text-red-600")}
-        {kpiCard("Perfect Links", r.perfectLinks, `${perfectPct}% uniquely linked`, <Fingerprint className="h-4 w-4" />, r.perfectLinks > 0 ? "text-red-600" : "text-green-600")}
-        {kpiCard("Records Linked", `${linkedPct}%`, `${r.linkedRecords} of ${r.totalRecords} linkable`, <Users className="h-4 w-4" />, r.linkedRecords / Math.max(r.totalRecords, 1) > 0.5 ? "text-orange-600" : "text-green-600")}
-        {kpiCard("Avg Match Size", r.avgMatchSize.toFixed(1), "External matches per record", <BarChart3 className="h-4 w-4" />)}
+
+      {/* ── §5.1 Attack Summary Banner ─────────────────────────────────────── */}
+      <div className={`rounded-lg border-2 p-4 ${bannerBorder}`}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-bold text-sm uppercase tracking-wider">🔗 Record Linkage Attack Results</span>
+          <span className={`text-xs font-bold px-2 py-1 rounded border ${r.eclr > 0.2 ? "bg-red-100 text-red-700 border-red-300" : r.eclr > 0.05 ? "bg-amber-100 text-amber-700 border-amber-300" : "bg-green-100 text-green-700 border-green-300"}`}>
+            RISK LEVEL: {riskLabel}
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground mb-2 flex flex-wrap gap-3">
+          <span>Records analysed: <strong>{r.N}</strong></span>
+          <span>QIs used: <strong>{qis.join(", ") || "—"}</strong></span>
+          <span>Distinct ECs: <strong>{r.distinctEcs}</strong></span>
+          <span>Min-K: <strong>{r.minK}</strong></span>
+        </div>
+        <p className="text-sm leading-relaxed">
+          An attacker with access to an external database (voter roll, census, social-media dump) can correctly
+          re-identify <strong className={riskColor}>{eclrPct}%</strong> of individuals by matching on{" "}
+          <em>{qis.slice(0, 3).join(", ")}{qis.length > 3 ? ` +${qis.length - 3} more` : ""}</em>.{" "}
+          {r.numUniqueRecords > 0
+            ? <><strong className="text-red-600">{r.numUniqueRecords} record{r.numUniqueRecords !== 1 ? "s" : ""}</strong> can be re-identified with <em>certainty</em> (EC size = 1). Worst-case single-record linkage risk is <strong className="text-red-600">{wclrPct}%</strong>.</>
+            : <>No records are uniquely identifiable (min-K = {r.minK}). Worst-case linkage risk is <strong className={riskColor}>{wclrPct}%</strong>.</>}
+        </p>
       </div>
+
+      {/* ── §5.2 KPI Row (6 cards) ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        {kpiCard("ECLR", `${eclrPct}%`, "Expected Correct Linkage Rate = ECs/N", <Network className="h-4 w-4" />, r.eclr > 0.2 ? "text-red-600" : r.eclr > 0.05 ? "text-amber-600" : "text-green-600")}
+        {kpiCard("WCLR", `${wclrPct}%`, "Worst-Case Linkage Risk = 1/Min-K", <Target className="h-4 w-4" />, r.wclr > 0.5 ? "text-red-600" : r.wclr > 0.2 ? "text-amber-600" : "text-green-600")}
+        {kpiCard("Min-K", r.minK, `Smallest EC size (target ≥ ${kThreshold})`, <Shield className="h-4 w-4" />, r.minK < kThreshold ? "text-red-600" : "text-green-600")}
+        {kpiCard("Distinct ECs", r.distinctEcs, `Amplification: ${r.amplificationFactor}×`, <BarChart3 className="h-4 w-4" />)}
+        {kpiCard("Certain Links", r.numUniqueRecords, "EC size = 1 (100% re-ID probability)", <Fingerprint className="h-4 w-4" />, r.numUniqueRecords > 0 ? "text-red-600" : "text-green-600")}
+        {kpiCard("Protected", r.numProtected, `EC size ≥ k=${kThreshold}`, <Users className="h-4 w-4" />, r.numProtected === r.N ? "text-green-600" : "text-amber-600")}
+      </div>
+
+      {/* ── §5.3 Linkage Outcome Donut + Breakdown ───────────────────────── */}
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-sm">Link Risk Score Distribution</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">Linkage Outcome Distribution (4-Level)</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={r.linkRiskHistogram}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="bucket" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip {...CHART_TOOLTIP} />
-                <Bar dataKey="count" name="Records" radius={[4, 4, 0, 0]}>
-                  {r.linkRiskHistogram.map((_, i) => (
-                    <Cell key={i} fill={i === 0 ? "#16A34A" : i < 3 ? "#D97706" : i === 4 ? "#EA580C" : "#DC2626"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">External Match Count Distribution</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={r.externalMatchDistribution}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="matches" tick={{ fontSize: 11 }} label={{ value: "# External Matches", position: "insideBottom", offset: -2, fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip {...CHART_TOOLTIP} />
-                <Bar dataKey="count" name="Records" radius={[4, 4, 0, 0]}>
-                  {r.externalMatchDistribution.map((d, i) => (
-                    <Cell key={i} fill={d.risk === "SAFE" ? "#16A34A" : d.risk === "CRITICAL" ? "#DC2626" : d.risk === "HIGH" ? "#EA580C" : "#D97706"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Linkage Status Breakdown</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={r.riskDonut} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={2} dataKey="value">
-                  <Cell fill="#DC2626" />
-                  <Cell fill="#EA580C" />
-                  <Cell fill="#16A34A" />
+                <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={2} dataKey="value">
+                  {donutData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                 </Pie>
-                <Tooltip {...CHART_TOOLTIP} />
+                <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v} records`} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-sm">Top Vulnerable Records (Highest Link Score)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">Outcome Level Definitions</CardTitle></CardHeader>
           <CardContent>
-            <ScrollArea className="h-[200px]">
-              <table className="w-full text-xs">
-                <thead><tr className="border-b"><th className="text-left pb-1">QI Combination</th><th className="text-right pb-1">Matches</th><th className="text-right pb-1">Link Score</th></tr></thead>
-                <tbody>
-                  {r.topVulnerable.map((row, i) => (
+            <table className="w-full text-xs">
+              <thead><tr className="border-b"><th className="text-left pb-2">Outcome</th><th className="text-right pb-2">EC Size</th><th className="text-right pb-2">Records</th><th className="text-right pb-2">%</th><th className="text-left pb-2 pl-3">Attacker Certainty</th></tr></thead>
+              <tbody>
+                {[
+                  { label: "Certain",   ecRange: "= 1",                  count: r.numUniqueRecords, meaning: "100% — uniquely identifiable" },
+                  { label: "Probable",  ecRange: "2–3",                  count: r.numProbable,      meaning: "33–50% — likely correct link" },
+                  { label: "Possible",  ecRange: `4–${kThreshold - 1}`,  count: r.numPossible,      meaning: `${(100 / kThreshold).toFixed(0)}–25% — below k threshold` },
+                  { label: "Protected", ecRange: `≥ ${kThreshold}`,      count: r.numProtected,     meaning: `≤ ${(100 / kThreshold).toFixed(0)}% — meets k-anonymity` },
+                ].map((row, i) => {
+                  const outcomes: LinkageOutcome[] = ["Certain", "Probable", "Possible", "Protected"];
+                  return (
                     <tr key={i} className="border-b border-muted">
-                      <td className="py-1 pr-2 text-muted-foreground truncate max-w-[200px]">{row.qiCombo}</td>
-                      <td className="py-1 text-right">{row.matchCount}</td>
-                      <td className="py-1 text-right font-bold text-red-600">{row.linkScore}%</td>
+                      <td className="py-1.5"><span className={`text-xs font-bold px-1.5 py-0.5 rounded ${OUTCOME_BG[outcomes[i]]}`}>{row.label}</span></td>
+                      <td className="py-1.5 text-right font-mono text-muted-foreground">{row.ecRange}</td>
+                      <td className="py-1.5 text-right font-bold" style={{ color: OUTCOME_COLOR[outcomes[i]] }}>{row.count}</td>
+                      <td className="py-1.5 text-right">{r.N > 0 ? ((row.count / r.N) * 100).toFixed(1) : 0}%</td>
+                      <td className="py-1.5 pl-3 text-muted-foreground">{row.meaning}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── §5.4 Record-Level Trace Table ─────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-sm">Record-Level Linkage Trace ({r.N} records)</CardTitle>
+            <button onClick={csvExport} className="text-xs px-2 py-1 rounded border hover:bg-muted transition-colors flex items-center gap-1" data-testid="button-rl-csv-export">
+              ⬇ Export CSV
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {(["all", "Certain", "Probable", "Possible", "Protected"] as const).map((mode) => (
+              <button key={mode} onClick={() => { setFilterMode(mode); setPage(1); }}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors ${filterMode === mode ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                data-testid={`button-rl-filter-${mode}`}>
+                {mode === "all" ? `All (${r.N})` : `${mode} (${mode === "Certain" ? r.numUniqueRecords : mode === "Probable" ? r.numProbable : mode === "Possible" ? r.numPossible : r.numProtected})`}
+              </button>
+            ))}
+            <input
+              className="text-xs px-2 py-0.5 rounded border bg-background ml-auto w-36"
+              placeholder="Search QI values…"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              data-testid="input-rl-search"
+            />
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ScrollArea className="h-[260px]">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-background z-10">
+                <tr className="border-b">
+                  <th className="text-left py-2 px-3">#</th>
+                  {qis.map((qi) => <th key={qi} className="text-left py-2 px-2">{qi}</th>)}
+                  <th className="text-right py-2 px-2">EC Size</th>
+                  <th className="text-right py-2 px-2">Link Score</th>
+                  <th className="text-left py-2 px-2">Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((row) => (
+                  <tr key={row.rowIdx} className="border-b border-muted hover:bg-muted/30">
+                    <td className="py-1.5 px-3 text-muted-foreground">{row.rowIdx}</td>
+                    {qis.map((qi) => <td key={qi} className="py-1.5 px-2 truncate max-w-[100px]">{row.qiValues[qi] ?? "—"}</td>)}
+                    <td className="py-1.5 px-2 text-right font-mono">{row.ecSize}</td>
+                    <td className="py-1.5 px-2 text-right font-bold" style={{ color: OUTCOME_COLOR[row.linkageOutcome] }}>{row.linkScore.toFixed(3)}</td>
+                    <td className="py-1.5 px-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${OUTCOME_BG[row.linkageOutcome]}`}>{row.linkageOutcome}</span>
+                    </td>
+                  </tr>
+                ))}
+                {pageRows.length === 0 && (
+                  <tr><td colSpan={qis.length + 4} className="py-6 text-center text-muted-foreground">No records match the current filter.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </ScrollArea>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-3 py-2 border-t text-xs">
+              <span className="text-muted-foreground">{filtered.length} records · Page {safePage}/{totalPages}</span>
+              <div className="flex gap-1">
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} className="px-2 py-0.5 rounded border disabled:opacity-40 hover:bg-muted" data-testid="button-rl-prev">‹ Prev</button>
+                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} className="px-2 py-0.5 rounded border disabled:opacity-40 hover:bg-muted" data-testid="button-rl-next">Next ›</button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── §5.5 Attack Simulation Narrative ──────────────────────────────── */}
+      {topRecord && (
+        <Card className="border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-red-800 dark:text-red-200 flex items-center gap-2">
+              <Target className="h-4 w-4" /> Attack Simulation Narrative — Highest-Risk Record
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-red-900 dark:text-red-100 leading-relaxed space-y-2">
+            <p>
+              <strong>Step 1 — Attacker acquires external dataset</strong>: The adversary downloads a publicly available
+              database (e.g., a voter roll, hospital discharge register, or social-media profile dump) that contains the
+              same quasi-identifier fields: <em>{qis.join(", ")}</em>.
+            </p>
+            <p>
+              <strong>Step 2 — Attacker issues a JOIN query</strong>: The adversary executes:
+            </p>
+            <pre className="text-xs bg-red-100 dark:bg-red-900/40 rounded p-2 font-mono overflow-x-auto">
+              {`SELECT target.*, external.name\nFROM target_dataset JOIN external_db\n  ON ${qis.map((qi) => `target.${qi} = external.${qi}`).join("\n     AND ")}\nWHERE ${qis.map((qi) => `target.${qi} = '${topRecord.qiValues[qi]}'`).join(" AND ")};`}
+            </pre>
+            <p>
+              <strong>Step 3 — Result</strong>: The query returns <strong>{topRecord.ecSize}</strong> match
+              {topRecord.ecSize !== 1 ? "es" : ""}. Link score = 1/{topRecord.ecSize} ={" "}
+              <strong className={topRecord.ecSize === 1 ? "text-red-600" : "text-amber-600"}>{topRecord.linkScore.toFixed(3)}</strong>.{" "}
+              Outcome: <span className={`font-bold ${topRecord.ecSize === 1 ? "text-red-600" : "text-amber-600"}`}>{topRecord.linkageOutcome}</span>.{" "}
+              {topRecord.ecSize === 1
+                ? "This record is uniquely identifiable — the attacker can re-identify this individual with 100% certainty."
+                : `The attacker has a 1-in-${topRecord.ecSize} chance (${(topRecord.linkScore * 100).toFixed(1)}%) of correct re-identification.`}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── §5.6 EC Size Distribution ─────────────────────────────────────── */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">EC Size Distribution (Chart)</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={r.ecSizeTable} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={80} />
+                <Tooltip {...CHART_TOOLTIP} />
+                <Bar dataKey="numRecords" radius={[0, 4, 4, 0]} name="Records">
+                  {r.ecSizeTable.map((row, i) => <Cell key={i} fill={["#DC2626","#EA580C","#D97706","#16A34A","#0EA5E9"][i] ?? "#16A34A"} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm">EC Size Distribution (Table)</CardTitle></CardHeader>
+          <CardContent>
+            <table className="w-full text-xs">
+              <thead><tr className="border-b"><th className="text-left pb-2">EC Size</th><th className="text-right pb-2"># ECs</th><th className="text-right pb-2"># Records</th><th className="text-right pb-2">% Dataset</th><th className="text-right pb-2">Risk Level</th></tr></thead>
+              <tbody>
+                {r.ecSizeTable.map((row, i) => {
+                  const colors = ["#DC2626","#EA580C","#D97706","#16A34A","#0EA5E9"];
+                  return (
+                    <tr key={i} className="border-b border-muted">
+                      <td className="py-1.5 font-medium" style={{ color: colors[i] }}>{row.label}</td>
+                      <td className="py-1.5 text-right">{row.numECs}</td>
+                      <td className="py-1.5 text-right">{row.numRecords}</td>
+                      <td className="py-1.5 text-right font-bold" style={{ color: colors[i] }}>{row.pct}</td>
+                      <td className="py-1.5 text-right text-muted-foreground">{row.risk}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── §5.7 Link Score Distribution ──────────────────────────────────── */}
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Link Score Distribution — Attacker Certainty by Record</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid md:grid-cols-2 gap-6">
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={r.linkScoreDistribution}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="bucket" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip {...CHART_TOOLTIP} />
+                <Bar dataKey="count" name="Records" radius={[4, 4, 0, 0]}>
+                  {r.linkScoreDistribution.map((_, i) => <Cell key={i} fill={["#DC2626","#EA580C","#D97706","#16A34A","#16A34A"][i] ?? "#16A34A"} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <table className="text-xs self-start">
+              <thead><tr className="border-b"><th className="text-left pb-2">Score Range</th><th className="text-right pb-2"># Records</th><th className="text-left pb-2 pl-3">Meaning</th></tr></thead>
+              <tbody>
+                {r.linkScoreDistribution.map((row, i) => {
+                  const meanings = ["Attacker is certain (EC = 1)","Probable linkage (EC 2–3)","Possible linkage (EC 4–k)","Low risk (EC just above k)","Effectively anonymous (large EC)"];
+                  return (
+                    <tr key={i} className="border-b border-muted">
+                      <td className="py-1.5 font-medium" style={{ color: ["#DC2626","#EA580C","#D97706","#16A34A","#16A34A"][i] }}>{row.bucket}</td>
+                      <td className="py-1.5 text-right font-bold">{row.count}</td>
+                      <td className="py-1.5 pl-3 text-muted-foreground">{meanings[i]}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── §5.8 L-Diversity Results ───────────────────────────────────────── */}
+      {r.lDiversityResults.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">L-Diversity Check (threshold l = {r.lDiversityResults[0] ? "see config" : "—"})</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {r.lDiversityResults[0] && r.lDiversityResults[0].totalEcs >= r.N * 0.9 && (
+              <div className="p-3 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 text-xs text-amber-800 dark:text-amber-200">
+                <div className="font-bold mb-1">⚠️ STRUCTURAL ARTIFACT — L-Diversity failures are caused by singleton ECs</div>
+                All {r.lDiversityResults[0].totalEcs} equivalence classes are singletons. A group of 1 can only contain 1 distinct SA value, so L-Diversity l≥2 failures are a mathematical inevitability. Reduce the number of quasi-identifiers to form multi-record ECs.
+              </div>
+            )}
+            {r.lDiversityResults.map((res, i) => (
+              <div key={i} className={`p-3 rounded-lg border ${res.status === "FAIL" ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-green-300 bg-green-50 dark:bg-green-950/20"}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm">SA: <code>{res.sa}</code></span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${res.status === "FAIL" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{res.status === "FAIL" ? "🔴 FAIL" : "🟢 PASS"}</span>
+                </div>
+                <div className="text-xs space-y-0.5 text-muted-foreground">
+                  <div>Min distinct SA values in any EC: <strong>{res.minL}</strong></div>
+                  <div>ECs violating l-diversity: <strong className={res.violatingEcs > 0 ? "text-red-600" : "text-green-600"}>{res.violatingEcs} of {res.totalEcs}</strong> ({res.totalEcs > 0 ? ((res.violatingEcs / res.totalEcs) * 100).toFixed(0) : 0}%)</div>
+                  <div>Records in violating ECs: <strong>{res.recordsInViolatingEcs}</strong></div>
+                  {res.status === "FAIL" && res.totalEcs < r.N * 0.9 && <div className="italic mt-1">In some groups, all records share the same {res.sa} value — an attacker who links a record to its group learns {res.sa} with certainty.</div>}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── §5.9 T-Closeness Results ───────────────────────────────────────── */}
+      {r.tClosenessResults.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">T-Closeness Check (Total Variation Distance)</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {r.tClosenessResults[0] && r.tClosenessResults[0].totalEcs >= r.N * 0.9 && (
+              <div className="p-3 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 text-xs text-amber-800 dark:text-amber-200">
+                <div className="font-bold mb-1">⚠️ STRUCTURAL ARTIFACT — T-Closeness high TVD is caused by singleton ECs</div>
+                Singleton ECs always deviate maximally (TVD → 1.0) from the global SA distribution. These failures are structural — not evidence of attribute inference within groups.
+              </div>
+            )}
+            {r.tClosenessResults.map((res, i) => (
+              <div key={i} className={`p-3 rounded-lg border ${res.status === "FAIL" ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-green-300 bg-green-50 dark:bg-green-950/20"}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm">SA: <code>{res.sa}</code></span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${res.status === "FAIL" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{res.status === "FAIL" ? "🔴 FAIL" : "🟢 PASS"}</span>
+                </div>
+                <div className="text-xs space-y-0.5 text-muted-foreground">
+                  <div>Max TVD from global distribution: <strong className={res.maxDistance > 0.3 ? "text-red-600" : "text-green-600"}>{res.maxDistance}</strong></div>
+                  <div>ECs violating t-closeness: <strong className={res.violatingEcs > 0 ? "text-red-600" : "text-green-600"}>{res.violatingEcs} of {res.totalEcs}</strong></div>
+                  {res.globalDist.length > 0 && (
+                    <div className="mt-1">
+                      Global distribution of <code>{res.sa}</code>:{" "}
+                      {res.globalDist.slice(0, 5).map((g) => `${g.value}: ${g.pct}%`).join(" · ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── §5.10 Top 10 Vulnerable Records ───────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Top 10 Vulnerable Records (Highest Link Score)</CardTitle>
+          <CardDescription className="text-xs">These rows should be suppressed or generalised before releasing this dataset.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[200px]">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b"><th className="text-left pb-1">Rank</th><th className="text-left pb-1">QI Combination</th><th className="text-right pb-1">EC Size</th><th className="text-right pb-1">Link Score</th><th className="text-left pb-1 pl-2">Outcome</th></tr></thead>
+              <tbody>
+                {r.topVulnerable.map((row, i) => (
+                  <tr key={i} className="border-b border-muted">
+                    <td className="py-1 pr-2 text-muted-foreground">{row.rank}</td>
+                    <td className="py-1 pr-2 text-muted-foreground truncate max-w-[180px]" title={row.qiCombo}>{row.qiCombo.slice(0, 50)}{row.qiCombo.length > 50 ? "…" : ""}</td>
+                    <td className="py-1 text-right">{row.ecSize}</td>
+                    <td className="py-1 text-right font-bold text-red-600">{row.linkScore.toFixed(3)}</td>
+                    <td className="py-1 pl-2"><span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${OUTCOME_BG[row.outcome]}`}>{row.outcome}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+
+      {/* ── §5.11 QI Contribution Analysis ────────────────────────────────── */}
+      {r.qiContribution.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">QI Contribution Analysis — Impact of Each Quasi-Identifier on ECLR</CardTitle>
+            <CardDescription className="text-xs">Delta = ECLR (full) − ECLR (without this QI). Higher delta = this QI drives more linkage risk.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid md:grid-cols-2 gap-6">
+              <ResponsiveContainer width="100%" height={Math.max(120, r.qiContribution.length * 32)}>
+                <BarChart data={r.qiContribution} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v * 100).toFixed(1)}%`} />
+                  <YAxis type="category" dataKey="qi" tick={{ fontSize: 11 }} width={100} />
+                  <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} />
+                  <Bar dataKey="delta" name="ECLR Delta" radius={[0, 4, 4, 0]}>
+                    {r.qiContribution.map((row, i) => (
+                      <Cell key={i} fill={row.delta > 0.3 ? "#DC2626" : row.delta > 0.1 ? "#EA580C" : row.delta > 0 ? "#D97706" : "#16A34A"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              <table className="text-xs self-start">
+                <thead><tr className="border-b"><th className="text-left pb-2">QI</th><th className="text-right pb-2">ECLR w/o</th><th className="text-right pb-2">Delta</th><th className="text-left pb-2 pl-3">Recommendation</th></tr></thead>
+                <tbody>
+                  {r.qiContribution.map((row, i) => (
+                    <tr key={i} className="border-b border-muted">
+                      <td className="py-1.5 font-medium">{row.qi}</td>
+                      <td className="py-1.5 text-right text-muted-foreground">{(row.eclrWithout * 100).toFixed(1)}%</td>
+                      <td className="py-1.5 text-right font-bold" style={{ color: row.delta > 0.1 ? "#DC2626" : row.delta > 0 ? "#D97706" : "#16A34A" }}>+{(row.delta * 100).toFixed(2)}%</td>
+                      <td className="py-1.5 pl-3 text-muted-foreground">{row.recommendation}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </ScrollArea>
+            </div>
           </CardContent>
         </Card>
-      </div>
+      )}
+
       <RecommendationsCard recs={r.recommendations} />
     </div>
   );
@@ -3500,7 +3866,7 @@ function ComparisonDashboard({ results }: { results: AllResults }) {
     { attack: "Singling Out",         result: results.singlingOut,          key: "singlingOut" as AttackId,          threat: "GDPR/DPDP singling-out",      metric: results.singlingOut ? `${results.singlingOut.singulableCount} singulable` : "—" },
     { attack: "Inference",            result: results.inference,            key: "inference" as AttackId,            threat: "ML attribute prediction",     metric: results.inference ? `${results.inference.infoGain}% info gain` : "—" },
     { attack: "Membership",           result: results.membership,           key: "membership" as AttackId,           threat: "Presence detection",          metric: results.membership ? `AUC ${results.membership.aucScore.toFixed(2)}` : "—" },
-    { attack: "Record Linkage",       result: results.recordLinkage,        key: "recordLinkage" as AttackId,        threat: "External dataset re-ID",      metric: results.recordLinkage ? `${results.recordLinkage.perfectLinks} perfect links` : "—" },
+    { attack: "Record Linkage",       result: results.recordLinkage,        key: "recordLinkage" as AttackId,        threat: "External dataset re-ID",      metric: results.recordLinkage ? `${results.recordLinkage.numUniqueRecords} certain links` : "—" },
     { attack: "Attr. Disclosure",     result: results.attributeDisclosure,  key: "attributeDisclosure" as AttackId,  threat: "Sensitive value inference",   metric: results.attributeDisclosure ? `Pmax ${(results.attributeDisclosure.worstCaseProb * 100).toFixed(0)}%` : "—" },
     { attack: "Differencing",         result: results.differencing,         key: "differencing" as AttackId,         threat: "Aggregate query leakage",     metric: results.differencing ? `${results.differencing.leakyPct}% leaky queries` : "—" },
     { attack: "Model Inversion",      result: results.modelInversion,       key: "modelInversion" as AttackId,       threat: "Attribute reconstruction",    metric: results.modelInversion ? `${results.modelInversion.inversionRate}% inverted` : "—" },
@@ -3735,7 +4101,7 @@ export default function RiskPage() {
     if (selectedAttacks.includes("singlingOut"))         steps.push({ id: "singlingOut",         label: "Singling Out Attack (GDPR Singling-Out Standard)...",   fn: () => { newResults.singlingOut         = runSingleOutAttack(rawData, quasiIdentifiers, sensitiveAttributes, kThreshold[0], lThreshold[0], tVal); } });
     if (selectedAttacks.includes("inference"))           steps.push({ id: "inference",           label: "Inference Attack (Form A+B: EC Homogeneity & Predictive)...", fn: () => { newResults.inference           = runInferenceAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0]); } });
     if (selectedAttacks.includes("membership"))          steps.push({ id: "membership",          label: "Membership Inference Attack (Gower NN + Population Rarity)...", fn: () => { newResults.membership          = runMembershipAttack(rawData, quasiIdentifiers, sensitiveAttributes, autoAssist?.columnGroups.directIdentifiers ?? []); } });
-    if (selectedAttacks.includes("recordLinkage"))       steps.push({ id: "recordLinkage",       label: "Record Linkage Attack (External Dataset Re-ID)...",          fn: () => { newResults.recordLinkage       = runRecordLinkageAttack(rawData, quasiIdentifiers); } });
+    if (selectedAttacks.includes("recordLinkage"))       steps.push({ id: "recordLinkage",       label: "Record Linkage Attack (External Dataset Re-ID)...",          fn: () => { newResults.recordLinkage       = runRecordLinkageAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal); } });
     if (selectedAttacks.includes("attributeDisclosure")) steps.push({ id: "attributeDisclosure", label: "Attribute Disclosure Attack (Sensitive Inference)...",        fn: () => { newResults.attributeDisclosure = runAttributeDisclosureAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
     if (selectedAttacks.includes("differencing"))        steps.push({ id: "differencing",        label: "Differencing Attack (Aggregate Query Leakage)...",            fn: () => { newResults.differencing        = runDifferencingAttack(rawData, quasiIdentifiers); } });
     if (selectedAttacks.includes("modelInversion"))      steps.push({ id: "modelInversion",      label: "Model Inversion Attack (Naïve Bayes Reconstruction)...",      fn: () => { newResults.modelInversion      = runModelInversionAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
@@ -4293,7 +4659,7 @@ export default function RiskPage() {
                       {a.id === "singlingOut"         && <SinglingOutReport r={results.singlingOut!} />}
                       {a.id === "inference"           && <InferenceReport r={results.inference!} />}
                       {a.id === "membership"          && <MembershipReport r={results.membership!} />}
-                      {a.id === "recordLinkage"       && <RecordLinkageReport r={results.recordLinkage!} />}
+                      {a.id === "recordLinkage"       && <RecordLinkageReport r={results.recordLinkage!} kThreshold={kThreshold[0]} />}
                       {a.id === "attributeDisclosure" && <AttributeDisclosureReport r={results.attributeDisclosure!} />}
                       {a.id === "differencing"        && <DifferencingReport r={results.differencing!} />}
                       {a.id === "modelInversion"      && <ModelInversionReport r={results.modelInversion!} />}
