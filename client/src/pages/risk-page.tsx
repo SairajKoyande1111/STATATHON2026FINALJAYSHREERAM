@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +22,7 @@ import type { Dataset } from "@shared/schema";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, RadarChart, Radar, PolarGrid,
-  PolarAngleAxis, PolarRadiusAxis, Legend,
+  PolarAngleAxis, PolarRadiusAxis, Legend, ReferenceLine,
 } from "recharts";
 
 import { runProsecutorAttack, type ProsecutorResult } from "@/lib/attacks/prosecutorAttack";
@@ -32,7 +32,7 @@ import { runSingleOutAttack, type SingleOutResult } from "@/lib/attacks/singleOu
 import { runInferenceAttack, type InferenceResult } from "@/lib/attacks/inferenceAttack";
 import { runMembershipAttack, type MembershipResult } from "@/lib/attacks/membershipAttack";
 import { runRecordLinkageAttack, type RecordLinkageResult, type LinkageOutcome } from "@/lib/attacks/recordLinkageAttack";
-import { runAttributeDisclosureAttack, type AttributeDisclosureResult } from "@/lib/attacks/attributeDisclosureAttack";
+import { runAttributeDisclosureAttack, type AttributeDisclosureResult, type DisclosureLabel } from "@/lib/attacks/attributeDisclosureAttack";
 import { runDifferencingAttack, type DifferencingResult } from "@/lib/attacks/differencingAttack";
 import { runModelInversionAttack, type ModelInversionResult } from "@/lib/attacks/modelInversionAttack";
 import { computeCompositeScore, type CompositeResult } from "@/lib/attacks/compositeScore";
@@ -3540,94 +3540,456 @@ function RecordLinkageReport({ r, kThreshold }: { r: RecordLinkageResult; kThres
   );
 }
 
+// ─── Helpers for AttributeDisclosureReport ───────────────────────────────────
+
+function disclosureLabelBadge(label: DisclosureLabel) {
+  const cfg: Record<DisclosureLabel, { bg: string; text: string }> = {
+    Guaranteed: { bg: "bg-red-100 dark:bg-red-900/30",    text: "text-red-700 dark:text-red-400" },
+    High:       { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-orange-700 dark:text-orange-400" },
+    Moderate:   { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" },
+    Safe:       { bg: "bg-green-100 dark:bg-green-900/30",  text: "text-green-700 dark:text-green-400" },
+  };
+  const c = cfg[label];
+  return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${c.bg} ${c.text}`}>{label}</span>;
+}
+
+function disclosureLabelColor(label: DisclosureLabel): string {
+  return label === "Guaranteed" ? "#DC2626" : label === "High" ? "#EA580C" : label === "Moderate" ? "#D97706" : "#16A34A";
+}
+
+function ADRBadge({ adr }: { adr: number }) {
+  if (adr > 0.6) return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs font-bold">🔴 HIGH</span>;
+  if (adr >= 0.2) return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs font-bold">🟡 MEDIUM</span>;
+  return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-bold">🟢 LOW</span>;
+}
+
 function AttributeDisclosureReport({ r }: { r: AttributeDisclosureResult }) {
+  const [recordFilter, setRecordFilter] = useState<"all" | DisclosureLabel>("all");
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordPage, setRecordPage] = useState(0);
+  const PAGE_SIZE = 50;
+
+  // Filtered record table
+  const filteredRows = useMemo(() => {
+    let rows = r.recordTable;
+    if (recordFilter !== "all") {
+      rows = rows.filter((row) =>
+        r.sensitiveAttributes.some((sa) => row.disclosureLabels[sa] === recordFilter)
+      );
+    }
+    if (recordSearch.trim()) {
+      const q = recordSearch.toLowerCase();
+      rows = rows.filter((row) =>
+        Object.values(row.qiValues).some((v) => v.toLowerCase().includes(q)) ||
+        Object.values(row.saValues).some((v) => v.toLowerCase().includes(q))
+      );
+    }
+    return rows;
+  }, [r.recordTable, recordFilter, recordSearch, r.sensitiveAttributes]);
+
+  const pageRows = filteredRows.slice(recordPage * PAGE_SIZE, (recordPage + 1) * PAGE_SIZE);
+  const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+
+  // CSV export
+  const exportCSV = () => {
+    if (!filteredRows.length) return;
+    const qiCols = r.quasiIdentifiers;
+    const saCols = r.sensitiveAttributes;
+    const header = ["Row#", ...qiCols, "EC_Size", ...saCols.map((s) => `${s}_Value`), ...saCols.map((s) => `${s}_DomValue`), ...saCols.map((s) => `${s}_DomFreq`), ...saCols.map((s) => `${s}_Label`), "MaxDiscRisk", "AtRisk"];
+    const lines = filteredRows.map((row) => [
+      row.rowIdx, ...qiCols.map((q) => row.qiValues[q] ?? ""), row.ecSize,
+      ...saCols.map((s) => row.saValues[s] ?? ""),
+      ...saCols.map((s) => row.dominantValues[s] ?? ""),
+      ...saCols.map((s) => (row.dominantFreqs[s] ?? 0).toFixed(4)),
+      ...saCols.map((s) => row.disclosureLabels[s] ?? ""),
+      row.maxDisclosureRisk.toFixed(4), row.atRisk ? "At Risk" : "Safe",
+    ].join(","));
+    const blob = new Blob([header.join(",") + "\n" + lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "attribute_disclosure_trace.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // SA donut data builder
+  const buildDonutData = (psa: typeof r.perSAResults[0]) => [
+    { name: "Guaranteed", value: psa.guaranteedRecords, fill: "#DC2626" },
+    { name: "High",       value: psa.highRiskRecords,   fill: "#EA580C" },
+    { name: "Moderate",   value: psa.moderateRiskRecords, fill: "#D97706" },
+    { name: "Safe",       value: psa.safeRecords,       fill: "#16A34A" },
+  ].filter((d) => d.value > 0);
+
+  const overallLabel = r.overallAdr > 0.6 ? "HIGH" : r.overallAdr >= 0.2 ? "MEDIUM" : "LOW";
+  const worstSA = r.saSensitivityRanking[0];
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiCard("Disclosure Risk", `${(r.riskScore * 100).toFixed(1)}%`, "Weighted Pmax across ECs", <Shield className="h-4 w-4" />, "text-red-600")}
-        {kpiCard("Worst-Case Pmax", `${(r.worstCaseProb * 100).toFixed(0)}%`, "Max single-group confidence", <AlertTriangle className="h-4 w-4" />, r.worstCaseProb > 0.8 ? "text-red-600" : r.worstCaseProb > 0.6 ? "text-orange-600" : "text-green-600")}
-        {kpiCard("High-Risk Groups", r.highRiskGroups, `of ${r.totalGroups} total groups (Pmax > 60%)`, <XCircle className="h-4 w-4" />, r.highRiskGroups > 0 ? "text-orange-600" : "text-green-600")}
-        {kpiCard("Entropy Risk", `${(r.entropyRisk * 100).toFixed(0)}%`, "1 − H_observed/H_max (avg)", <BarChart3 className="h-4 w-4" />, r.entropyRisk > 0.5 ? "text-red-600" : "text-green-600")}
-      </div>
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Dominant Probability Distribution (Pmax per Group)</CardTitle></CardHeader>
+
+      {/* §5.1 Summary Banner */}
+      <Card className={`border-l-4 ${r.overallAdr > 0.6 ? "border-l-red-500" : r.overallAdr >= 0.2 ? "border-l-yellow-500" : "border-l-green-500"}`}>
+        <CardContent className="pt-5 pb-4">
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 text-2xl`}>{r.overallAdr > 0.6 ? "🔴" : r.overallAdr >= 0.2 ? "🟡" : "🟢"}</div>
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center gap-3">
+                <h3 className="font-semibold text-base">Attribute Disclosure Risk: {overallLabel}</h3>
+                <ADRBadge adr={r.overallAdr} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Even though your dataset may satisfy k-anonymity, an attacker who knows which equivalence class a
+                person belongs to can correctly guess their{" "}
+                <strong>{worstSA?.sa ?? "sensitive attribute"}</strong> value{" "}
+                <strong>{(r.overallAdr * 100).toFixed(1)}%</strong> of the time.
+                {worstSA && worstSA.guaranteedRecords > 0 && (
+                  <> <strong className="text-red-600 dark:text-red-400">{worstSA.guaranteedRecords} records</strong> sit in completely
+                  homogeneous groups — their sensitive attribute is disclosed with <strong>100% certainty</strong>.</>
+                )}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                This attack does <strong>NOT</strong> require re-identification. Knowing a person's
+                quasi-identifiers (e.g., region + age group) is enough to learn their sensitive information.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Results based on <strong>{r.N.toLocaleString()}</strong> rows &nbsp;|&nbsp;
+                QIs: <strong>{r.quasiIdentifiers.join(", ")}</strong> &nbsp;|&nbsp;
+                SAs assessed: <strong>{r.sensitiveAttributes.join(", ")}</strong>
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* §5.2 Key Metrics Row per SA */}
+      {r.perSAResults.map((psa) => (
+        <Card key={psa.sa}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Shield className="h-4 w-4 text-blue-600" /> Sensitive Attribute: <strong>{psa.sa}</strong>
+              <ADRBadge adr={psa.adr} />
+            </CardTitle>
+          </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={r.dominantProbHistogram}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="bucket" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip {...CHART_TOOLTIP} />
-                <Bar dataKey="count" name="Groups" radius={[4, 4, 0, 0]}>
-                  {r.dominantProbHistogram.map((_, i) => (
-                    <Cell key={i} fill={["#16A34A", "#D97706", "#EA580C", "#DC2626"][i] || "#DC2626"} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+              {kpiCard("ADR", `${(psa.adr * 100).toFixed(1)}%`, "Avg disclosure probability", <Target className="h-4 w-4" />, psa.adr > 0.6 ? "text-red-600" : psa.adr >= 0.2 ? "text-yellow-600" : "text-green-600")}
+              {kpiCard("Guaranteed Disclosure", psa.guaranteedRecords.toLocaleString(), "100% certain — homogeneous ECs", <AlertTriangle className="h-4 w-4" />, psa.guaranteedRecords > 0 ? "text-red-600" : "text-green-600")}
+              {kpiCard("Homogeneous ECs", `${psa.homogeneousEcs} / ${psa.totalEcs}`, "All records share same SA value", <XCircle className="h-4 w-4" />, psa.homogeneousEcs > 0 ? "text-orange-600" : "text-green-600")}
+              {kpiCard("L-Violating ECs", `${psa.lViolatingEcs} / ${psa.totalEcs}`, `Fewer than l distinct SA values`, <BarChart3 className="h-4 w-4" />, psa.lViolatingEcs > 0 ? "text-orange-600" : "text-green-600")}
+              {kpiCard("Safe Records", `${psa.safeRecords.toLocaleString()} (${r.N > 0 ? ((psa.safeRecords / r.N) * 100).toFixed(0) : 0}%)`, "In l-diverse ECs", <CheckCircle className="h-4 w-4" />, psa.safeRecords === r.N ? "text-green-600" : "text-muted-foreground")}
+            </div>
+
+            {/* §5.3 Disclosure Risk Distribution + §5.7 Global SA Distribution side-by-side */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">§5.3 Disclosure Risk Distribution</p>
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie data={buildDonutData(psa)} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2} dataKey="value">
+                      {buildDonutData(psa).map((d, i) => <Cell key={i} fill={d.fill} />)}
+                    </Pie>
+                    <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v} records`} />
+                    <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">§5.7 Global SA Distribution</p>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={psa.globalDist} layout="vertical" margin={{ left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} unit="%" domain={[0, 100]} />
+                    <YAxis type="category" dataKey="value" tick={{ fontSize: 9 }} width={90} />
+                    <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v}%`} />
+                    <Bar dataKey="pct" fill="#7C3AED" radius={[0, 4, 4, 0]} name="% of Records" />
+                  </BarChart>
+                </ResponsiveContainer>
+                {psa.homogeneousEcsByValue.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Fully homogeneous ECs: {psa.homogeneousEcsByValue.map((h) => `${h.value} (${h.count})`).join(", ")}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* §5.6 EC Homogeneity Heatmap */}
+            {psa.topEcs.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-medium text-muted-foreground mb-2">§5.6 EC Homogeneity Heatmap — Top {Math.min(psa.topEcs.length, 20)} ECs by Disclosure Risk</p>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <ScrollArea className="h-[200px]">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b sticky top-0 bg-card">
+                          <th className="text-left pb-1 pr-2">EC</th>
+                          <th className="text-left pb-1 pr-2">QI Combination</th>
+                          <th className="text-right pb-1 pr-1">Size</th>
+                          <th className="text-right pb-1 pr-1">Distinct SA</th>
+                          <th className="text-right pb-1 pr-1">Dom. Value</th>
+                          <th className="text-right pb-1 pr-1">Dom. Freq</th>
+                          <th className="text-right pb-1">Label</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {psa.topEcs.map((ec, i) => (
+                          <tr key={i} className="border-b border-muted">
+                            <td className="py-0.5 pr-2 text-muted-foreground">{ec.ecId}</td>
+                            <td className="py-0.5 pr-2 text-muted-foreground truncate max-w-[120px]">{ec.qiCombo.slice(0, 35)}</td>
+                            <td className="py-0.5 text-right pr-1">{ec.ecSize}</td>
+                            <td className="py-0.5 text-right pr-1">{ec.distinctSaValues}</td>
+                            <td className="py-0.5 text-right pr-1 text-muted-foreground">{ec.dominantValue.slice(0, 12)}</td>
+                            <td className="py-0.5 text-right pr-1 font-bold" style={{ color: disclosureLabelColor(ec.disclosureLabel) }}>{(ec.dominantFreq * 100).toFixed(0)}%</td>
+                            <td className="py-0.5 text-right">{disclosureLabelBadge(ec.disclosureLabel)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </ScrollArea>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={psa.topEcs.slice(0, 15)} layout="vertical" margin={{ left: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis type="number" tick={{ fontSize: 10 }} domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
+                      <YAxis type="category" dataKey="ecId" tick={{ fontSize: 9 }} width={38} />
+                      <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${(v * 100).toFixed(1)}%`} />
+                      <ReferenceLine x={1 / 3} stroke="#6366F1" strokeDasharray="4 4" label={{ value: "1/l threshold", fontSize: 9, fill: "#6366F1" }} />
+                      <Bar dataKey="dominantFreq" radius={[0, 3, 3, 0]} name="Dominant Freq">
+                        {psa.topEcs.slice(0, 15).map((ec, i) => (
+                          <Cell key={i} fill={disclosureLabelColor(ec.disclosureLabel)} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* §5.8 L-Diversity + §5.9 T-Closeness side-by-side */}
+            <div className="grid md:grid-cols-2 gap-4 mt-4">
+              <div className={`rounded-lg border p-3 ${psa.lStatus === "FAIL" ? "border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/20" : "border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/20"}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold">§5.8 L-Diversity Check</span>
+                  <span className={`text-xs font-bold ${psa.lStatus === "FAIL" ? "text-red-600" : "text-green-600"}`}>{psa.lStatus === "FAIL" ? "🔴 FAIL" : "🟢 PASS"}</span>
+                </div>
+                <div className="text-xs space-y-1 text-muted-foreground">
+                  <div>Min distinct SA values in any EC: <strong className={psa.minL < 2 ? "text-red-600" : ""}>{psa.minL}</strong></div>
+                  <div>ECs violating l-diversity: <strong>{psa.lViolatingEcs} / {psa.totalEcs}</strong> ({psa.totalEcs > 0 ? ((psa.lViolatingEcs / psa.totalEcs) * 100).toFixed(0) : 0}%)</div>
+                  <div>Records in l-violating ECs: <strong>{psa.recordsInLViolatingEcs.toLocaleString()}</strong> ({r.N > 0 ? ((psa.recordsInLViolatingEcs / r.N) * 100).toFixed(0) : 0}%)</div>
+                  {psa.lStatus === "FAIL" && (
+                    <p className="mt-1 text-red-700 dark:text-red-400">In {psa.lViolatingEcs} equivalence classes, fewer than l distinct {psa.sa} values exist. The attacker can infer {psa.sa} with confidence above 1/l for these records.</p>
+                  )}
+                </div>
+              </div>
+              <div className={`rounded-lg border p-3 ${psa.tStatus === "FAIL" ? "border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/20" : "border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/20"}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold">§5.9 T-Closeness Check</span>
+                  <span className={`text-xs font-bold ${psa.tStatus === "FAIL" ? "text-orange-600" : "text-green-600"}`}>{psa.tStatus === "FAIL" ? "🔴 FAIL" : "🟢 PASS"}</span>
+                </div>
+                <div className="text-xs space-y-1 text-muted-foreground">
+                  <div>Max EC deviation (TVD): <strong className={psa.tStatus === "FAIL" ? "text-orange-600" : ""}>{psa.maxTvd.toFixed(4)}</strong></div>
+                  <div>ECs violating t-closeness: <strong>{psa.tViolatingEcs} / {psa.totalEcs}</strong></div>
+                  <div>Global dist: {psa.globalDist.slice(0, 3).map((d) => `${d.value} ${d.pct}%`).join(" · ")}</div>
+                  {psa.tStatus === "FAIL" && (
+                    <p className="mt-1 text-orange-700 dark:text-orange-400">In {psa.tViolatingEcs} groups, the internal distribution of {psa.sa} is far from the global baseline — attribute inference becomes easier.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* §5.4 Record-Level Disclosure Trace Table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-sm">§5.4 Record-Level Disclosure Trace — {filteredRows.length.toLocaleString()} rows</CardTitle>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={exportCSV}>
+              <Download className="h-3 w-3 mr-1" /> Download Full Table (CSV)
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {(["all", "Guaranteed", "High", "Moderate", "Safe"] as const).map((f) => (
+              <Button key={f} variant={recordFilter === f ? "default" : "outline"} size="sm" className="h-6 text-xs px-2"
+                onClick={() => { setRecordFilter(f); setRecordPage(0); }}>
+                {f === "all" ? "Show All" : f === "Guaranteed" ? "🔴 Guaranteed" : f === "High" ? "🟠 High" : f === "Moderate" ? "🟡 Moderate" : "🟢 Safe"}
+              </Button>
+            ))}
+            <input
+              className="ml-auto h-6 text-xs border rounded px-2 bg-background"
+              placeholder="Search…" value={recordSearch}
+              onChange={(e) => { setRecordSearch(e.target.value); setRecordPage(0); }}
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[320px]">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b sticky top-0 bg-card">
+                  <th className="text-left pb-1 pr-2">Row #</th>
+                  {r.quasiIdentifiers.slice(0, 3).map((qi) => (
+                    <th key={qi} className="text-left pb-1 pr-2">{qi}</th>
                   ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+                  <th className="text-right pb-1 pr-2">EC Size</th>
+                  {r.sensitiveAttributes.map((sa) => (
+                    <Fragment key={sa}>
+                      <th className="text-right pb-1 pr-1">{sa} Value</th>
+                      <th className="text-right pb-1 pr-1">Dom. SA</th>
+                      <th className="text-right pb-1 pr-1">Dom. Freq</th>
+                      <th className="text-right pb-1 pr-1">Label</th>
+                    </Fragment>
+                  ))}
+                  <th className="text-right pb-1">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((row, i) => (
+                  <tr key={i} className="border-b border-muted">
+                    <td className="py-0.5 pr-2 text-muted-foreground">{row.rowIdx}</td>
+                    {r.quasiIdentifiers.slice(0, 3).map((qi) => (
+                      <td key={qi} className="py-0.5 pr-2 truncate max-w-[80px]">{row.qiValues[qi]}</td>
+                    ))}
+                    <td className="py-0.5 text-right pr-2">{row.ecSize}</td>
+                    {r.sensitiveAttributes.map((sa) => (
+                      <Fragment key={sa}>
+                        <td className="py-0.5 text-right pr-1">{(row.saValues[sa] ?? "").slice(0, 12)}</td>
+                        <td className="py-0.5 text-right pr-1 text-muted-foreground">{(row.dominantValues[sa] ?? "").slice(0, 12)}</td>
+                        <td className="py-0.5 text-right pr-1 font-bold" style={{ color: disclosureLabelColor(row.disclosureLabels[sa] ?? "Safe") }}>
+                          {((row.dominantFreqs[sa] ?? 0) * 100).toFixed(0)}%
+                        </td>
+                        <td className="py-0.5 text-right pr-1">{disclosureLabelBadge(row.disclosureLabels[sa] ?? "Safe")}</td>
+                      </Fragment>
+                    ))}
+                    <td className="py-0.5 text-right">{row.atRisk ? <span className="text-red-600 font-bold">🔴</span> : <span className="text-green-600">🟢</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollArea>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+              <span>Page {recordPage + 1} of {totalPages} ({filteredRows.length.toLocaleString()} rows)</span>
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" className="h-6 text-xs px-2" disabled={recordPage === 0} onClick={() => setRecordPage(p => p - 1)}>← Prev</Button>
+                <Button variant="outline" size="sm" className="h-6 text-xs px-2" disabled={recordPage >= totalPages - 1} onClick={() => setRecordPage(p => p + 1)}>Next →</Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* §5.5 Attack Simulation Narrative */}
+      {r.mostVulnerableEc && (
         <Card>
-          <CardHeader><CardTitle className="text-sm">Top Sensitive Values (Global Frequency)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">§5.5 Attack Simulation — How the Attack Works on YOUR Data</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={r.topSensitiveValues} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis type="number" tick={{ fontSize: 11 }} unit="%" />
-                <YAxis type="category" dataKey="value" tick={{ fontSize: 10 }} width={100} />
-                <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v}%`} />
-                <Bar dataKey="groupPct" fill="#7C3AED" radius={[0, 4, 4, 0]} name="% of Records" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="font-mono text-xs bg-muted rounded-lg p-4 space-y-3 whitespace-pre-wrap">
+              <div className="text-blue-600 dark:text-blue-400 font-bold">ATTRIBUTE DISCLOSURE SIMULATION — Step by Step</div>
+              <div><span className="text-muted-foreground">Step 1 — Attacker's Starting Knowledge</span>{"\n"}  The attacker does NOT need to know who the target is.{"\n"}  They only need to know the target's quasi-identifier values,{"\n"}  which are often publicly available (e.g., region, age group, survey round):{"\n"}{r.mostVulnerableEc.qiCombo.split("|").map((v, i) => `    ${r.quasiIdentifiers[i] ?? `QI${i+1}`} = ${v}`).join("\n")}</div>
+              <div><span className="text-muted-foreground">Step 2 — EC Lookup</span>{"\n"}  The attacker queries: "Which group do people with these QI values belong to?"{"\n"}  Result: {r.mostVulnerableEc.qiCombo.slice(0, 60)} — contains <strong>{r.mostVulnerableEc.ecSize}</strong> records.</div>
+              <div><span className="text-muted-foreground">Step 3 — Sensitive Attribute Inference</span>{"\n"}  The attacker looks at the distribution of <strong>{r.mostVulnerableEc.saName}</strong> within this group:{"\n"}{r.mostVulnerableEc.saDistribution.map((d) => `    ${d.value}: ${d.count} records (${d.pct}%)`).join("\n")}{"\n"}{"\n"}  Dominant value: <strong>{r.mostVulnerableEc.dominantValue}</strong> — appears in <strong>{(r.mostVulnerableEc.dominantFreq * 100).toFixed(1)}%</strong> of records.</div>
+              <div><span className={r.mostVulnerableEc.dominantFreq >= 1.0 ? "text-red-600 font-bold" : "text-orange-600 font-bold"}>  {r.mostVulnerableEc.dominantFreq >= 1.0 ? "⚠️ Since all" : "⚠️ Since"} {r.mostVulnerableEc.dominantFreq >= 1.0 ? r.mostVulnerableEc.ecSize : Math.round(r.mostVulnerableEc.dominantFreq * r.mostVulnerableEc.ecSize)} of {r.mostVulnerableEc.ecSize} records in this group have {r.mostVulnerableEc.saName} = {r.mostVulnerableEc.dominantValue},{"\n"}  the attacker knows this person's {r.mostVulnerableEc.saName} with <strong>{(r.mostVulnerableEc.dominantFreq * 100).toFixed(1)}%</strong> certainty{"\n"}  — WITHOUT knowing which specific record is theirs.</span></div>
+              <div><span className="text-muted-foreground">Step 4 — No Re-identification Required</span>{"\n"}  The attacker did not learn the person's name, ID, or any unique identifier.{"\n"}  They only used the QI combination to place the target into a group.{"\n"}  Yet they now know: <strong>{r.mostVulnerableEc.saName} = {r.mostVulnerableEc.dominantValue}</strong>   ({(r.mostVulnerableEc.dominantFreq * 100).toFixed(1)}% confident)</div>
+              {r.perSAResults[0] && (
+                <div><span className="text-muted-foreground">Step 5 — Scale</span>{"\n"}  Records with guaranteed SA disclosure (EC fully homogeneous): <strong>{r.perSAResults[0].guaranteedRecords.toLocaleString()}</strong>{"\n"}  Records with high disclosure risk (≥75% dominant freq):       <strong>{r.perSAResults[0].highRiskRecords.toLocaleString()}</strong>{"\n"}  Total records with some disclosure risk (&gt;50%):               <strong>{(r.perSAResults[0].guaranteedRecords + r.perSAResults[0].highRiskRecords + r.perSAResults[0].moderateRiskRecords).toLocaleString()}</strong>{"\n"}  That is <strong>{r.N > 0 ? (((r.perSAResults[0].guaranteedRecords + r.perSAResults[0].highRiskRecords + r.perSAResults[0].moderateRiskRecords) / r.N) * 100).toFixed(1) : 0}%</strong> of your entire dataset.</div>
+              )}
+            </div>
           </CardContent>
         </Card>
-        {r.perSAResults.length > 0 && (
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Per Sensitive Attribute Risk</CardTitle></CardHeader>
-            <CardContent>
+      )}
+
+      {/* §5.10 Top 10 Vulnerable Records */}
+      {r.topVulnerable.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">§5.10 Top Vulnerable Records</CardTitle></CardHeader>
+          <CardContent>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left pb-1 pr-2">Rank</th>
+                  <th className="text-left pb-1 pr-2">QI Combination</th>
+                  <th className="text-right pb-1 pr-2">EC Size</th>
+                  <th className="text-right pb-1 pr-2">SA</th>
+                  <th className="text-right pb-1 pr-2">SA Value</th>
+                  <th className="text-right pb-1 pr-2">Dom. Freq</th>
+                  <th className="text-right pb-1 pr-2">Label</th>
+                  <th className="text-left pb-1">Why Vulnerable</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.topVulnerable.map((v, i) => (
+                  <tr key={i} className="border-b border-muted">
+                    <td className="py-1 pr-2 font-bold text-muted-foreground">{v.rank}</td>
+                    <td className="py-1 pr-2 text-muted-foreground truncate max-w-[140px]">{v.qiCombo.slice(0, 50)}</td>
+                    <td className="py-1 text-right pr-2">{v.ecSize}</td>
+                    <td className="py-1 text-right pr-2 font-medium">{v.saName}</td>
+                    <td className="py-1 text-right pr-2">{v.saValue.slice(0, 14)}</td>
+                    <td className="py-1 text-right pr-2 font-bold" style={{ color: disclosureLabelColor(v.disclosureLabel) }}>{(v.dominantFreq * 100).toFixed(0)}%</td>
+                    <td className="py-1 text-right pr-2">{disclosureLabelBadge(v.disclosureLabel)}</td>
+                    <td className="py-1 text-muted-foreground">{v.whyVulnerable}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-xs text-muted-foreground mt-2 italic">
+              These records do not need to be uniquely re-identified for harm to occur. The attacker only needs to know the person's quasi-identifier combination to infer their sensitive attribute.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* §5.11 SA Sensitivity Ranking */}
+      {r.saSensitivityRanking.length > 1 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">§5.11 Sensitive Attribute Sensitivity Ranking</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-4">
               <table className="w-full text-xs">
-                <thead><tr className="border-b"><th className="text-left pb-2">Attribute</th><th className="text-right pb-2">Avg Pmax</th><th className="text-right pb-2">Worst Pmax</th><th className="text-right pb-2">Entropy Risk</th><th className="text-right pb-2">High-Risk Groups</th><th className="text-right pb-2">Risk Level</th></tr></thead>
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left pb-1">Rank</th>
+                    <th className="text-left pb-1">Sensitive Attribute</th>
+                    <th className="text-right pb-1">ADR</th>
+                    <th className="text-right pb-1">Guaranteed</th>
+                    <th className="text-right pb-1">Homo. ECs</th>
+                    <th className="text-right pb-1">Status</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {r.perSAResults.map((sa, i) => (
+                  {r.saSensitivityRanking.map((row, i) => (
                     <tr key={i} className="border-b border-muted">
-                      <td className="py-1.5 font-medium">{sa.sa}</td>
-                      <td className="py-1.5 text-right">{(sa.avgDominantProb * 100).toFixed(0)}%</td>
-                      <td className="py-1.5 text-right font-bold" style={{ color: sa.worstCaseProb > 0.6 ? "#DC2626" : "#16A34A" }}>{(sa.worstCaseProb * 100).toFixed(0)}%</td>
-                      <td className="py-1.5 text-right">{(sa.entropyRisk * 100).toFixed(0)}%</td>
-                      <td className="py-1.5 text-right">{sa.highRiskGroups}</td>
-                      <td className="py-1.5 text-right">{riskBadge(sa.riskLevel)}</td>
+                      <td className="py-1.5 pr-2 font-bold text-muted-foreground">{row.rank}</td>
+                      <td className="py-1.5 font-medium">{row.sa}</td>
+                      <td className="py-1.5 text-right font-bold" style={{ color: row.adr > 0.6 ? "#DC2626" : row.adr >= 0.2 ? "#D97706" : "#16A34A" }}>{(row.adr * 100).toFixed(1)}%</td>
+                      <td className="py-1.5 text-right">{row.guaranteedRecords.toLocaleString()}</td>
+                      <td className="py-1.5 text-right">{row.homogeneousEcs}/{row.totalEcs}</td>
+                      <td className="py-1.5 text-right">{riskBadge(row.riskLevel)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </CardContent>
-          </Card>
-        )}
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Top High-Risk Groups (Sorted by Pmax)</CardTitle></CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[220px]">
-              <table className="w-full text-xs">
-                <thead><tr className="border-b"><th className="text-left pb-1">QI Combination</th><th className="text-right pb-1">Size</th><th className="text-right pb-1">Dominant Value</th><th className="text-right pb-1">Pmax</th><th className="text-right pb-1">H Risk</th><th className="text-right pb-1">Level</th></tr></thead>
-                <tbody>
-                  {r.perGroupRisks.slice(0, 12).map((g, i) => (
-                    <tr key={i} className="border-b border-muted">
-                      <td className="py-1 pr-2 text-muted-foreground truncate max-w-[160px]">{g.qiCombo.slice(0, 40)}</td>
-                      <td className="py-1 text-right">{g.size}</td>
-                      <td className="py-1 text-right text-muted-foreground">{g.dominantValue.slice(0, 15)}</td>
-                      <td className="py-1 text-right font-bold" style={{ color: g.dominantProb > 0.6 ? "#DC2626" : "#16A34A" }}>{(g.dominantProb * 100).toFixed(0)}%</td>
-                      <td className="py-1 text-right">{(g.entropyRisk * 100).toFixed(0)}%</td>
-                      <td className="py-1 text-right">{riskBadge(g.riskLevel)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollArea>
+              <ResponsiveContainer width="100%" height={Math.max(120, r.saSensitivityRanking.length * 36)}>
+                <BarChart data={r.saSensitivityRanking.map((s) => ({ sa: s.sa, adr: parseFloat((s.adr * 100).toFixed(1)) }))} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis type="number" tick={{ fontSize: 10 }} unit="%" domain={[0, 100]} />
+                  <YAxis type="category" dataKey="sa" tick={{ fontSize: 10 }} width={90} />
+                  <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v}%`} />
+                  <Bar dataKey="adr" radius={[0, 4, 4, 0]} name="ADR %">
+                    {r.saSensitivityRanking.map((s, i) => (
+                      <Cell key={i} fill={s.adr > 0.6 ? "#DC2626" : s.adr >= 0.2 ? "#D97706" : "#16A34A"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              The most exposed attribute is <strong>{r.saSensitivityRanking[0]?.sa}</strong> —{" "}
+              <strong>{((r.saSensitivityRanking[0]?.adr ?? 0) * 100).toFixed(1)}%</strong> of records can have this value inferred without re-identification.
+            </p>
           </CardContent>
         </Card>
-      </div>
+      )}
+
+      {/* §5.12 Recommendations */}
       <RecommendationsCard recs={r.recommendations} />
+
     </div>
   );
 }
@@ -3867,7 +4229,7 @@ function ComparisonDashboard({ results }: { results: AllResults }) {
     { attack: "Inference",            result: results.inference,            key: "inference" as AttackId,            threat: "ML attribute prediction",     metric: results.inference ? `${results.inference.infoGain}% info gain` : "—" },
     { attack: "Membership",           result: results.membership,           key: "membership" as AttackId,           threat: "Presence detection",          metric: results.membership ? `AUC ${results.membership.aucScore.toFixed(2)}` : "—" },
     { attack: "Record Linkage",       result: results.recordLinkage,        key: "recordLinkage" as AttackId,        threat: "External dataset re-ID",      metric: results.recordLinkage ? `${results.recordLinkage.numUniqueRecords} certain links` : "—" },
-    { attack: "Attr. Disclosure",     result: results.attributeDisclosure,  key: "attributeDisclosure" as AttackId,  threat: "Sensitive value inference",   metric: results.attributeDisclosure ? `Pmax ${(results.attributeDisclosure.worstCaseProb * 100).toFixed(0)}%` : "—" },
+    { attack: "Attr. Disclosure",     result: results.attributeDisclosure,  key: "attributeDisclosure" as AttackId,  threat: "Sensitive value inference",   metric: results.attributeDisclosure ? `ADR ${(results.attributeDisclosure.overallAdr * 100).toFixed(1)}%` : "—" },
     { attack: "Differencing",         result: results.differencing,         key: "differencing" as AttackId,         threat: "Aggregate query leakage",     metric: results.differencing ? `${results.differencing.leakyPct}% leaky queries` : "—" },
     { attack: "Model Inversion",      result: results.modelInversion,       key: "modelInversion" as AttackId,       threat: "Attribute reconstruction",    metric: results.modelInversion ? `${results.modelInversion.inversionRate}% inverted` : "—" },
   ];
@@ -4102,7 +4464,7 @@ export default function RiskPage() {
     if (selectedAttacks.includes("inference"))           steps.push({ id: "inference",           label: "Inference Attack (Form A+B: EC Homogeneity & Predictive)...", fn: () => { newResults.inference           = runInferenceAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0]); } });
     if (selectedAttacks.includes("membership"))          steps.push({ id: "membership",          label: "Membership Inference Attack (Gower NN + Population Rarity)...", fn: () => { newResults.membership          = runMembershipAttack(rawData, quasiIdentifiers, sensitiveAttributes, autoAssist?.columnGroups.directIdentifiers ?? []); } });
     if (selectedAttacks.includes("recordLinkage"))       steps.push({ id: "recordLinkage",       label: "Record Linkage Attack (External Dataset Re-ID)...",          fn: () => { newResults.recordLinkage       = runRecordLinkageAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal); } });
-    if (selectedAttacks.includes("attributeDisclosure")) steps.push({ id: "attributeDisclosure", label: "Attribute Disclosure Attack (Sensitive Inference)...",        fn: () => { newResults.attributeDisclosure = runAttributeDisclosureAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
+    if (selectedAttacks.includes("attributeDisclosure")) steps.push({ id: "attributeDisclosure", label: "Attribute Disclosure Attack (Sensitive Inference)...",        fn: () => { newResults.attributeDisclosure = runAttributeDisclosureAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0], tVal); } });
     if (selectedAttacks.includes("differencing"))        steps.push({ id: "differencing",        label: "Differencing Attack (Aggregate Query Leakage)...",            fn: () => { newResults.differencing        = runDifferencingAttack(rawData, quasiIdentifiers); } });
     if (selectedAttacks.includes("modelInversion"))      steps.push({ id: "modelInversion",      label: "Model Inversion Attack (Naïve Bayes Reconstruction)...",      fn: () => { newResults.modelInversion      = runModelInversionAttack(rawData, quasiIdentifiers, sensitiveAttributes); } });
 

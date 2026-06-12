@@ -2,3 +2,4 @@
 - [Privacy Page Architecture](privacy-page-arch.md) — all 15 privacy techniques computed client-side; 6-tab UI in privacy-page.tsx; lib files in client/src/lib/privacy/
 - [TypeScript Iterator Fix](ts-iterator-fix.md) — tsconfig lacks downlevelIteration; always use Array.from() instead of spread on Map/Set iterators
 - [Form B Rarity Scoring](form-b-rarity.md) — log-normalization is still min-max in log-space; use sigmoid on log z-score to avoid boundary artifacts
+- [Attribute Disclosure Spec](attr-disclosure-spec.md) — disc_risk = dominant_freq per EC; ADR = mean across records; overall = max across SAs; 13-section UI; labels: Guaranteed/High/Moderate/Safe
