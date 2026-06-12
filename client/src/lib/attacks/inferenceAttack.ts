@@ -215,6 +215,72 @@ function liftStatus(lift: number): "CRITICAL" | "MEDIUM" | "LOW" {
   return lift > LIFT_CRITICAL ? "CRITICAL" : lift > LIFT_MEDIUM ? "MEDIUM" : "LOW";
 }
 
+// ─── SA type detection ────────────────────────────────────────────────────────
+
+type SAType = "binary" | "continuous" | "categorical";
+
+function detectSAType(data: DataRow[], col: string): SAType {
+  const vals = data.map((r) => r[col]).filter((v) => v !== null && v !== undefined && v !== "");
+  const distinct = new Set(vals.map(String));
+  if (distinct.size <= 2) return "binary";
+  const isNumeric = vals.every((v) => !isNaN(Number(v)));
+  if (isNumeric && distinct.size > 10) return "continuous";
+  return "categorical";
+}
+
+function saTypeRecommendation(saType: SAType, saName: string, confidence: string, n_ec: number, qis: string[]): string {
+  const ecPhrase = `${n_ec} equivalence class${n_ec !== 1 ? "es" : ""}`;
+  const qiStr = `[${qis.join(", ")}]`;
+  if (saType === "binary") {
+    return (
+      `🔴 CRITICAL — Form A confidence for "${saName}" is ${confidence} on average. ` +
+      `${ecPhrase} show near-uniform "${saName}" values. ` +
+      `"${saName}" is a **binary attribute**: recommended fixes are ` +
+      `(1) suppressing records in high-confidence ECs before release, ` +
+      `(2) record swapping within matched ECs to break homogeneity, or ` +
+      `(3) coarsen the QIs ${qiStr} to merge singletons.`
+    );
+  }
+  if (saType === "continuous") {
+    return (
+      `🔴 CRITICAL — Form A confidence for "${saName}" is ${confidence} on average. ` +
+      `${ecPhrase} show near-uniform "${saName}" values. ` +
+      `"${saName}" is a **continuous attribute**: recommended fixes are ` +
+      `(1) adding calibrated Laplace or Gaussian noise (differential privacy), ` +
+      `(2) bucketing values into ranges (e.g. quartile bands) before release, or ` +
+      `(3) coarsen the QIs ${qiStr} so that equivalence classes become more diverse.`
+    );
+  }
+  return (
+    `🔴 CRITICAL — Form A confidence for "${saName}" is ${confidence} on average. ` +
+    `${ecPhrase} show near-uniform "${saName}" values. ` +
+    `"${saName}" is a **categorical attribute**: recommended fixes are ` +
+    `(1) top-coding rare categories into an "Other" group, ` +
+    `(2) generalising "${saName}" values to broader categories, ` +
+    `(3) enforcing l-diversity on "${saName}", or ` +
+    `(4) coarsen the QIs ${qiStr} to increase EC diversity.`
+  );
+}
+
+function saMediumRecommendation(saType: SAType, saName: string, confidence: string): string {
+  if (saType === "binary") {
+    return (
+      `🟡 MEDIUM — Form A confidence for "${saName}" is ${confidence}. ` +
+      `Some ECs have skewed distributions. For this binary attribute, consider record swapping or suppressing the most exposed ECs.`
+    );
+  }
+  if (saType === "continuous") {
+    return (
+      `🟡 MEDIUM — Form A confidence for "${saName}" is ${confidence}. ` +
+      `Some ECs show low spread. Consider adding small noise or bucketing "${saName}" into ranges to reduce inference leakage.`
+    );
+  }
+  return (
+    `🟡 MEDIUM — Form A confidence for "${saName}" is ${confidence}. ` +
+    `Some ECs have skewed distributions — consider l-diversity enforcement or top-coding rare "${saName}" categories.`
+  );
+}
+
 // ─── Main function ────────────────────────────────────────────────────────────
 
 export function runInferenceAttack(
@@ -417,15 +483,13 @@ export function runInferenceAttack(
   const recommendations: string[] = [];
 
   perSAResults.forEach((r) => {
+    const saType = detectSAType(data, r.sa);
+    const confStr = `${(r.formA.datasetRisk * 100).toFixed(1)}%`;
     if (r.formA.datasetRisk >= FORM_A_HIGH) {
       const n_ec = r.formA.ecBreakdown.filter((e) => e.confidence >= FORM_A_HIGH).length;
-      recommendations.push(
-        `🔴 CRITICAL — Form A confidence for "${r.sa}" is ${(r.formA.datasetRisk * 100).toFixed(1)}% on average. ${n_ec} equivalence class${n_ec !== 1 ? "es" : ""} have near-uniform "${r.sa}" values. Consider: adding noise/perturbation, suppressing "${r.sa}" for high-confidence ECs, or broader generalisation of [${quasiIdentifiers.join(", ")}].`
-      );
+      recommendations.push(saTypeRecommendation(saType, r.sa, confStr, n_ec, quasiIdentifiers));
     } else if (r.formA.datasetRisk >= FORM_A_MEDIUM) {
-      recommendations.push(
-        `🟡 MEDIUM — Form A confidence for "${r.sa}" is ${(r.formA.datasetRisk * 100).toFixed(1)}%. Some equivalence classes have skewed distributions — consider l-diversity enforcement.`
-      );
+      recommendations.push(saMediumRecommendation(saType, r.sa, confStr));
     }
     if (r.formB.status === "ok" && (r.formB.inferenceLift ?? 0) > LIFT_MEDIUM * 100) {
       recommendations.push(
