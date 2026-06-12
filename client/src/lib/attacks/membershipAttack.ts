@@ -310,15 +310,35 @@ export function runMembershipAttack(
 
   const validMultipliers = multiplierVals.filter((v): v is number => v !== null);
   if (validMultipliers.length > 0) {
-    const rarities = multiplierVals.map((v) => (v !== null ? 1.0 / v : null));
-    const validRarities = rarities.filter((v): v is number => v !== null);
-    const maxRarity = validRarities.length > 0 ? Math.max(...validRarities) : 1;
-    if (maxRarity > 0) {
-      formBScores = rarities.map((r) => (r !== null ? parseFloat((r / maxRarity).toFixed(3)) : null));
-      const validB = formBScores.filter((v): v is number => v !== null);
-      avgFormBScore = validB.length > 0 ? parseFloat((validB.reduce((a, b) => a + b, 0) / validB.length).toFixed(3)) : null;
-      formBStatus = "ok";
-    }
+    // Log-scale normalization: survey multipliers are ratio-scale quantities that can
+    // span orders of magnitude, so log-space distances are more meaningful than linear.
+    //
+    // Direction: lower Multiplier_comb → fewer people share this profile → rarer →
+    //            higher rarity score. We invert by working with log(maxMult / v).
+    //
+    // Soft clamp to (0.001, 0.999): prevents min-max boundary arithmetic from forcing
+    // any record to exactly 1.000 or 0.000 — the original bug where the record with
+    // the minimum multiplier always produced score = maxRarity / maxRarity = 1.000.
+    const maxMult = Math.max(...validMultipliers);
+    const minMult = Math.min(...validMultipliers);
+    const logRange = Math.log(maxMult) - Math.log(minMult);
+
+    formBScores = multiplierVals.map((v) => {
+      if (v === null) return null;
+      // All multipliers identical → assign uniform mid-range rarity
+      if (logRange === 0) return parseFloat((0.5).toFixed(3));
+      // Inverted log ratio: 0 = most common (highest mult), 1 = rarest (lowest mult)
+      const raw = (Math.log(maxMult) - Math.log(v)) / logRange;
+      // Soft clamp avoids forced boundary values from normalization arithmetic
+      const score = Math.max(0.001, Math.min(0.999, raw));
+      return parseFloat(score.toFixed(3));
+    });
+
+    const validB = formBScores.filter((v): v is number => v !== null);
+    avgFormBScore = validB.length > 0
+      ? parseFloat((validB.reduce((a, b) => a + b, 0) / validB.length).toFixed(3))
+      : null;
+    formBStatus = "ok";
   }
 
   // Step 6: Per-record traces
