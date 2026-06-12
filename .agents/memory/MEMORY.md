@@ -1,3 +1,4 @@
 - [Prosecutor Attack Spec](prosecutor-attack-spec.md) — link_score = 1/ec_size per record; re_id_risk = mean(link_scores) = num_ECs/N; do NOT use auxiliary dataset
 - [Privacy Page Architecture](privacy-page-arch.md) — all 15 privacy techniques computed client-side; 6-tab UI in privacy-page.tsx; lib files in client/src/lib/privacy/
 - [TypeScript Iterator Fix](ts-iterator-fix.md) — tsconfig lacks downlevelIteration; always use Array.from() instead of spread on Map/Set iterators
+- [Form B Rarity Scoring](form-b-rarity.md) — log-normalization is still min-max in log-space; use sigmoid on log z-score to avoid boundary artifacts

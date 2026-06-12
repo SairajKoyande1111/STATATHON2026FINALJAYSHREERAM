@@ -310,27 +310,37 @@ export function runMembershipAttack(
 
   const validMultipliers = multiplierVals.filter((v): v is number => v !== null);
   if (validMultipliers.length > 0) {
-    // Log-scale normalization: survey multipliers are ratio-scale quantities that can
-    // span orders of magnitude, so log-space distances are more meaningful than linear.
+    // Form B — sigmoid on log z-score.
     //
-    // Direction: lower Multiplier_comb → fewer people share this profile → rarer →
-    //            higher rarity score. We invert by working with log(maxMult / v).
+    // Root cause of boundary artifacts: any min-max normalization (linear or log-space)
+    // maps the boundary records to exactly 0 and 1. Soft-clamping only hides this —
+    // the min/max records still land at 0.001/0.999.
     //
-    // Soft clamp to (0.001, 0.999): prevents min-max boundary arithmetic from forcing
-    // any record to exactly 1.000 or 0.000 — the original bug where the record with
-    // the minimum multiplier always produced score = maxRarity / maxRarity = 1.000.
-    const maxMult = Math.max(...validMultipliers);
-    const minMult = Math.min(...validMultipliers);
-    const logRange = Math.log(maxMult) - Math.log(minMult);
+    // Fix: abandon normalization entirely. Instead, compute a z-score in log-multiplier
+    // space and pass it through a logistic sigmoid:
+    //
+    //   z_i  = (mean_log - log(mult_i)) / std_log   [inverted: low mult → positive z → rare]
+    //   score = 1 / (1 + e^(-z_i))
+    //
+    // Properties:
+    //  • sigmoid(0) = 0.5  → median-multiplier record is mid-range rarity
+    //  • sigmoid(±2) ≈ 0.88 / 0.12  → record 2 std-devs from mean in log space
+    //  • sigmoid(±3) ≈ 0.95 / 0.05  → only genuine outliers exceed 0.95/0.05
+    //  • No normalization arithmetic → no forced boundary values for any dataset size
+    const logMults = validMultipliers.map((v) => Math.log(v));
+    const meanLog = logMults.reduce((a, b) => a + b, 0) / logMults.length;
+    const stdLog = Math.sqrt(
+      logMults.map((v) => (v - meanLog) ** 2).reduce((a, b) => a + b, 0) / logMults.length
+    );
 
     formBScores = multiplierVals.map((v) => {
       if (v === null) return null;
-      // All multipliers identical → assign uniform mid-range rarity
-      if (logRange === 0) return parseFloat((0.5).toFixed(3));
-      // Inverted log ratio: 0 = most common (highest mult), 1 = rarest (lowest mult)
-      const raw = (Math.log(maxMult) - Math.log(v)) / logRange;
-      // Soft clamp avoids forced boundary values from normalization arithmetic
-      const score = Math.max(0.001, Math.min(0.999, raw));
+      // If all multipliers are identical, everyone has the same rarity
+      if (stdLog === 0) return parseFloat((0.5).toFixed(3));
+      // z in log-space, inverted: lower multiplier → rarer → positive z → higher score
+      const z = (meanLog - Math.log(v)) / stdLog;
+      // Logistic sigmoid maps z → (0, 1) without hard boundaries
+      const score = 1 / (1 + Math.exp(-z));
       return parseFloat(score.toFixed(3));
     });
 
