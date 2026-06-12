@@ -2235,39 +2235,76 @@ function InferenceReport({ r }: { r: InferenceResult }) {
             {/* Form A */}
             <div className="p-3 rounded border bg-white/50 dark:bg-black/20">
               <div className="font-semibold text-xs mb-2 text-muted-foreground uppercase tracking-wider">Form A — Group-Based Inference</div>
-              <div className="flex items-center gap-4 mb-3 flex-wrap">
-                <div>
-                  <div className="text-xs text-muted-foreground">Dataset-wide avg confidence</div>
-                  <div className="text-2xl font-bold" style={{ color: inferenceFormAColor(sa.formA.datasetRisk) }}>
-                    {(sa.formA.datasetRisk * 100).toFixed(1)}%
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Majority-class baseline</div>
-                  <div className="text-2xl font-bold text-slate-500">{sa.formA.majorityClassPct.toFixed(1)}%</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Attacker lift vs baseline</div>
-                  <div className={`text-xl font-bold ${sa.formA.inferenceFormALift > 10 ? "text-red-600" : sa.formA.inferenceFormALift > 0 ? "text-amber-600" : "text-green-600"}`}>
-                    {sa.formA.inferenceFormALift > 0 ? "+" : ""}{sa.formA.inferenceFormALift.toFixed(1)} pp
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Records in high-risk groups (≥70%)</div>
-                  <div className="text-xl font-bold text-red-600">{sa.formA.highRiskRecordPct.toFixed(1)}%</div>
-                </div>
-              </div>
-              {/* Baseline context note for binary/categorical SAs */}
-              {!sa.formA.allSingletonArtifact && sa.formA.inferenceFormALift <= 5 && sa.formA.datasetRisk >= 0.5 && (
-                <div className="mb-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 rounded text-xs text-green-800 dark:text-green-200">
-                  ℹ️ <strong>Low attacker lift:</strong> Form A confidence of {(sa.formA.datasetRisk * 100).toFixed(1)}% is only {sa.formA.inferenceFormALift.toFixed(1)} pp above the majority-class baseline of {sa.formA.majorityClassPct.toFixed(1)}%. A random guesser predicting the majority class would already be right ~{sa.formA.majorityClassPct.toFixed(0)}% of the time — QI groups provide minimal additional inference power.
-                </div>
-              )}
-              {!sa.formA.allSingletonArtifact && sa.formA.inferenceFormALift > 10 && (
-                <div className="mb-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 rounded text-xs text-red-800 dark:text-red-200">
-                  🔴 <strong>Significant attacker lift:</strong> Form A gives +{sa.formA.inferenceFormALift.toFixed(1)} pp above the {sa.formA.majorityClassPct.toFixed(1)}% majority-class baseline — knowing which QI group a person belongs to meaningfully increases the attacker's ability to infer "{sa.sa}".
-                </div>
-              )}
+              {(() => {
+                const isContinuous = sa.formA.saType === "continuous";
+                const isLowCard = sa.formA.saType === "binary" || sa.formA.distinctCount <= 5;
+                // Show baseline KPIs for non-continuous SAs; for continuous, show a note instead
+                // For singleton artifacts: only suppress baseline for high-cardinality/continuous
+                const showBaseline = !isContinuous;
+                const suppressForSingleton = sa.formA.allSingletonArtifact && !isLowCard;
+                const lift = sa.formA.inferenceFormALift;
+                return (
+                  <>
+                    <div className="flex items-center gap-4 mb-3 flex-wrap">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Dataset-wide avg confidence</div>
+                        <div className="text-2xl font-bold" style={{ color: inferenceFormAColor(sa.formA.datasetRisk) }}>
+                          {(sa.formA.datasetRisk * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      {showBaseline && (
+                        <>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Majority-class baseline</div>
+                            <div className="text-2xl font-bold text-slate-500">{sa.formA.majorityClassPct.toFixed(1)}%</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Attacker lift vs baseline</div>
+                            <div className={`text-xl font-bold ${lift > 10 ? "text-red-600" : lift > 0 ? "text-amber-600" : "text-green-600"}`}>
+                              {lift > 0 ? "+" : ""}{lift.toFixed(1)} pp
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      {isContinuous && (
+                        <div className="text-xs text-slate-500 italic self-end pb-1">
+                          Baseline comparison not applicable for continuous attributes
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-xs text-muted-foreground">Records in high-risk groups (≥70%)</div>
+                        <div className="text-xl font-bold text-red-600">{sa.formA.highRiskRecordPct.toFixed(1)}%</div>
+                      </div>
+                    </div>
+
+                    {/* Continuous SA guidance */}
+                    {isContinuous && (
+                      <div className="mb-2 p-2 bg-slate-50 dark:bg-slate-900/30 border border-slate-200 rounded text-xs text-slate-700 dark:text-slate-300">
+                        ℹ️ <strong>Continuous attribute:</strong> Majority-class baseline is not meaningful here — every unique decimal value counts as its own category (e.g. 37.4 acres ≠ 37.5 acres). To reduce inference risk, use <strong>range bucketing</strong> (e.g. 0–10, 10–25, 25–50 acres) or add <strong>calibrated noise</strong> (±X acres perturbation).
+                      </div>
+                    )}
+
+                    {/* Lift context notes — only for non-continuous, non-suppressed-singleton */}
+                    {showBaseline && !suppressForSingleton && lift <= 5 && sa.formA.datasetRisk >= 0.5 && (
+                      <div className="mb-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 rounded text-xs text-green-800 dark:text-green-200">
+                        ℹ️ <strong>Low attacker lift:</strong> Form A confidence of {(sa.formA.datasetRisk * 100).toFixed(1)}% is only {lift.toFixed(1)} pp above the majority-class baseline of {sa.formA.majorityClassPct.toFixed(1)}%. A random guesser predicting the majority class would already be right ~{sa.formA.majorityClassPct.toFixed(0)}% of the time — QI groups provide minimal additional inference power.
+                      </div>
+                    )}
+                    {showBaseline && !suppressForSingleton && lift > 10 && (
+                      <div className="mb-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 rounded text-xs text-red-800 dark:text-red-200">
+                        🔴 <strong>Significant attacker lift:</strong> Form A gives +{lift.toFixed(1)} pp above the {sa.formA.majorityClassPct.toFixed(1)}% majority-class baseline — knowing which QI group a person belongs to meaningfully increases the attacker's ability to infer "{sa.sa}".
+                      </div>
+                    )}
+
+                    {/* For binary/low-cardinality singletons: show lift notes but add singleton caveat */}
+                    {showBaseline && sa.formA.allSingletonArtifact && isLowCard && lift > 10 && (
+                      <div className="mb-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 rounded text-xs text-amber-800 dark:text-amber-200">
+                        ⚠️ <strong>Singleton caveat:</strong> The +{lift.toFixed(1)} pp lift above baseline is meaningful for this {sa.formA.saType} attribute, but all ECs are currently singletons. Coarsen QIs to form multi-record groups to confirm this risk holds before taking remediation action.
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* ── Structural artifact warning when ALL ECs are singletons ── */}
               {sa.formA.ecBreakdown.length > 0 && sa.formA.ecBreakdown.every((ec) => ec.ecSize === 1) && (

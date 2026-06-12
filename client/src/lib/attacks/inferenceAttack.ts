@@ -45,10 +45,12 @@ export interface FormAResult {
     pct: string;
     meaning: string;
   }[];
-  highRiskRecordPct: number;  // % in ECs with conf >= 0.7
-  majorityClassPct: number;   // naive-guesser baseline (majority class proportion × 100)
-  inferenceFormALift: number; // datasetRisk*100 − majorityClassPct (true attacker lift in pp)
-  allSingletonArtifact: boolean; // true when every EC has size = 1
+  highRiskRecordPct: number;    // % in ECs with conf >= 0.7
+  majorityClassPct: number;     // naive-guesser baseline (majority class proportion × 100)
+  inferenceFormALift: number;   // datasetRisk*100 − majorityClassPct (true attacker lift in pp)
+  allSingletonArtifact: boolean;// true when every EC has size = 1
+  saType: SAType;               // detected type used for baseline suppression logic
+  distinctCount: number;        // number of distinct SA values in the full dataset
 }
 
 export interface FormBResult {
@@ -355,15 +357,20 @@ export function runInferenceAttack(
     const highRiskCount = confidencesPerRecord.filter((c) => c >= FORM_A_HIGH).length;
     const highRiskRecordPct = (highRiskCount / n) * 100;
 
-    // Majority-class baseline (Fix 3): naive guesser always predicts most common SA value
+    // SA type + distinct count (used for baseline suppression and recommendation branching)
+    const saType = detectSAType(data, sa);
     const saValCounts = new Map<string, number>();
     data.forEach((row) => {
       const v = String(row[sa] ?? "");
       saValCounts.set(v, (saValCounts.get(v) ?? 0) + 1);
     });
+    const distinctCount = saValCounts.size;
     const majorityCount = Math.max(...Array.from(saValCounts.values()));
-    const majorityClassPct = n > 0 ? (majorityCount / n) * 100 : 0;
-    const inferenceFormALift = datasetRisk * 100 - majorityClassPct;
+    // For continuous SAs the majority-class proportion is meaningless (each unique value ≈ its own "class"),
+    // so we'll mark it as NaN and suppress it in the UI.
+    const isContinuousSA = saType === "continuous";
+    const majorityClassPct = (!isContinuousSA && n > 0) ? (majorityCount / n) * 100 : NaN;
+    const inferenceFormALift = !isContinuousSA ? datasetRisk * 100 - majorityClassPct : NaN;
     const allSingletonArtifact = ecBreakdown.length > 0 && ecBreakdown.every((ec) => ec.ecSize === 1);
 
     // Confidence distribution
@@ -391,6 +398,8 @@ export function runInferenceAttack(
       majorityClassPct,
       inferenceFormALift,
       allSingletonArtifact,
+      saType,
+      distinctCount,
     };
 
     // ── FORM B ─────────────────────────────────────────────────────────────
@@ -505,19 +514,40 @@ export function runInferenceAttack(
   const recommendations: string[] = [];
 
   perSAResults.forEach((r) => {
-    const saType = detectSAType(data, r.sa);
+    // Use saType stored in formA — avoids re-running detectSAType
+    const saType = r.formA.saType;
     const confStr = `${(r.formA.datasetRisk * 100).toFixed(1)}%`;
+    // Low-cardinality: binary (≤2) or categorical with ≤5 distinct values
+    // For these, the majority-class baseline is still meaningful even when all ECs are singletons
+    const isLowCardinality = saType === "binary" || r.formA.distinctCount <= 5;
 
     if (r.formA.allSingletonArtifact) {
-      // Fix 2: singleton ECs make Form A confidence a mathematical artifact — suppress MEDIUM/CRITICAL
-      // Only add a single explanatory note (not actionable) so the panel isn't contradictory
-      if (r.formA.datasetRisk >= FORM_A_MEDIUM) {
-        recommendations.push(
-          `ℹ️ NOT APPLICABLE (Singleton Artifact) — Form A confidence for "${r.sa}" is ${confStr} ` +
-          `but all ${r.formA.ecBreakdown.length} equivalence classes are singletons (EC size = 1). ` +
-          `This is a mathematical artifact of over-specified quasi-identifiers, not a genuine inference risk. ` +
-          `Action: coarsen or reduce QIs so multi-record equivalence classes form before any Form A remediation is considered.`
-        );
+      if (isLowCardinality) {
+        // Keep actionable recommendations — baseline comparison is valid for binary/low-card.
+        // Just append a secondary singleton caveat so the user knows to verify with coarser QIs.
+        if (r.formA.datasetRisk >= FORM_A_HIGH) {
+          const n_ec = r.formA.ecBreakdown.filter((e) => e.confidence >= FORM_A_HIGH).length;
+          recommendations.push(
+            saTypeRecommendation(saType, r.sa, confStr, n_ec, quasiIdentifiers) +
+            ` ⚠️ Caveat: all ECs are currently singletons — coarsen QIs first to confirm this risk holds on multi-record groups.`
+          );
+        } else if (r.formA.datasetRisk >= FORM_A_MEDIUM) {
+          recommendations.push(
+            saMediumRecommendation(saType, r.sa, confStr) +
+            ` ⚠️ Caveat: all ECs are currently singletons — verify by coarsening QIs.`
+          );
+        }
+      } else {
+        // High-cardinality categorical or continuous — the 100% confidence is fully explained
+        // by the singleton artifact; no actionable recommendation is appropriate.
+        if (r.formA.datasetRisk >= FORM_A_MEDIUM) {
+          recommendations.push(
+            `ℹ️ NOT APPLICABLE (Singleton Artifact) — Form A confidence for "${r.sa}" is ${confStr} ` +
+            `but all ${r.formA.ecBreakdown.length} equivalence classes are singletons (EC size = 1). ` +
+            `This is a mathematical artifact of over-specified quasi-identifiers, not a genuine inference risk. ` +
+            `Action: coarsen or reduce QIs so multi-record equivalence classes form before any Form A remediation is considered.`
+          );
+        }
       }
     } else {
       if (r.formA.datasetRisk >= FORM_A_HIGH) {
