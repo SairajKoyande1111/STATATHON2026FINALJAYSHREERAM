@@ -30,7 +30,7 @@ import {
   applyDataShuffling, applyCellSuppression,
 } from "@/lib/privacy/sdc";
 import type { GeneralisationColConfig } from "@/lib/privacy/sdc";
-import { applyLaplace, applyGaussian, applyExponential } from "@/lib/privacy/dp";
+import { applyLaplace, applyGaussian, applyExponential, epsilonLabel, epsilonBadgeClass, type SensitivityMode } from "@/lib/privacy/dp";
 import { applyStatisticalSDG, applyDPSDG } from "@/lib/privacy/synthetic";
 import { applyHomomorphicEncryption, applySMPC } from "@/lib/privacy/crypto";
 import { applyFederatedLearning } from "@/lib/privacy/federated";
@@ -640,8 +640,12 @@ export default function PrivacyPage() {
   const [csSecondary, setCsSecondary] = useState(true);
 
   // ── DP parameters ──────────────────────────────────────────────────────────
-  const [epsilon,    setEpsilon]    = useState([1.0]);
-  const [delta,      setDelta]      = useState([1e-5]);
+  const [epsilon,           setEpsilon]           = useState([1.0]);
+  const [delta,             setDelta]             = useState([1e-5]);
+  const [dpSensitivityMode, setDpSensitivityMode] = useState<SensitivityMode>("auto");
+  const [dpPostClamp,       setDpPostClamp]       = useState(true);
+  const [dpSeedEnabled,     setDpSeedEnabled]     = useState(false);
+  const [dpSeed,            setDpSeed]            = useState(42);
 
   // ── SDG parameters ─────────────────────────────────────────────────────────
   const [synthSize,    setSynthSize]    = useState([100]);
@@ -1032,10 +1036,11 @@ export default function PrivacyPage() {
             throw new Error("Unknown SDC technique");
         }
       } else if (family === "dp") {
+        const dpOpts = { sensitivityMode: dpSensitivityMode, postClamp: dpPostClamp, seed: dpSeedEnabled ? dpSeed : null };
         switch (dpTech) {
-          case "laplace":   res = applyLaplace(rawData, epsilon[0], cols); break;
-          case "gaussian":  res = applyGaussian(rawData, epsilon[0], delta[0], cols); break;
-          case "exponential": res = applyExponential(rawData, epsilon[0], cols); break;
+          case "laplace":     res = applyLaplace(rawData, epsilon[0], cols, dpOpts); break;
+          case "gaussian":    res = applyGaussian(rawData, epsilon[0], delta[0], cols, dpOpts); break;
+          case "exponential": res = applyExponential(rawData, epsilon[0], cols, dpOpts); break;
           default: throw new Error("Unknown DP technique");
         }
       } else if (family === "synthetic") {
@@ -1750,13 +1755,65 @@ export default function PrivacyPage() {
             {/* ══ FAMILY 2: DIFFERENTIAL PRIVACY ═════════════════════════════ */}
             <TabsContent value="dp" className="mt-4">
               <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
+                {/* Left: Mechanism selector */}
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Mechanism</CardTitle></CardHeader>
                   <CardContent>
                     <TechList items={DP_TECHNIQUES} selected={dpTech} onSelect={(id) => { setDpTech(id); setResult(null); }} />
                   </CardContent>
                 </Card>
+
+                {/* Right: Parameter panel */}
                 <div className="space-y-4 min-w-0 overflow-hidden">
+
+                  {/* Dataset Overview */}
+                  {rawData.length > 0 && (() => {
+                    const numC = allCols.filter((c) => colProfiles[c]?.isNum).length;
+                    const catC = allCols.length - numC;
+                    const missingPct = rawData.length > 0 && allCols.length > 0
+                      ? (rawData.reduce((s, row) => s + allCols.filter((c) => row[c] == null || String(row[c]).trim() === "").length, 0) / (rawData.length * allCols.length) * 100).toFixed(1)
+                      : "0.0";
+                    return (
+                      <Card className="border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
+                        <CardHeader className="pb-2 pt-3">
+                          <CardTitle className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <Database className="h-3.5 w-3.5" /> Dataset Overview
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pb-3">
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            {([
+                              ["Rows", rawData.length],
+                              ["Numeric", numC],
+                              ["Categorical", catC],
+                            ] as [string, number][]).map(([lbl, val]) => (
+                              <div key={lbl} className="rounded bg-white dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 py-1.5">
+                                <div className="text-base font-bold text-purple-700 dark:text-purple-300">{val}</div>
+                                <div className="text-[10px] text-muted-foreground">{lbl}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                            <span>Total columns: <strong>{allCols.length}</strong></span>
+                            <span>Missing: <strong>{missingPct}%</strong></span>
+                          </div>
+                          {dpTech === "laplace" || dpTech === "gaussian" ? (
+                            <p className="mt-1.5 text-[10px] text-purple-600 dark:text-purple-400">
+                              ✓ Laplace/Gaussian will perturb <strong>{numC}</strong> numeric column{numC !== 1 ? "s" : ""}
+                              {catC > 0 ? ` · ${catC} categorical untouched` : ""}
+                            </p>
+                          ) : (
+                            <p className="mt-1.5 text-[10px] text-purple-600 dark:text-purple-400">
+                              ✓ Exponential will perturb <strong>{catC}</strong> categorical column{catC !== 1 ? "s" : ""}
+                              {numC > 0 ? ` · ${numC} numeric untouched` : ""}
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
+
+                  {/* Main parameters card */}
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -1766,30 +1823,155 @@ export default function PrivacyPage() {
                     </CardHeader>
                     <CardContent className="space-y-5">
                       <FormulaBox id={dpTech} />
-                      <SliderField label="Privacy Budget (ε)" value={epsilon} onChange={setEpsilon} min={0.1} max={10} step={0.1} format={(v) => v.toFixed(1)} helpText="Lower ε = stronger privacy, more noise. ε < 1 = strong DP." />
+
+                      {/* ε slider + budget badge */}
+                      <div className="space-y-2">
+                        <SliderField
+                          label="Privacy Budget (ε)"
+                          value={epsilon}
+                          onChange={setEpsilon}
+                          min={0.1} max={10} step={0.1}
+                          format={(v) => v.toFixed(1)}
+                          helpText="Lower ε = stronger privacy, more noise. ε ≤ 1 = strong DP."
+                        />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white ${epsilonBadgeClass(epsilon[0])}`}>
+                            ε = {epsilon[0].toFixed(1)} — {epsilonLabel(epsilon[0])}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {epsilon[0] <= 0.5 ? "Strongest protection, highest noise." :
+                             epsilon[0] <= 1.0 ? "Strong protection for sensitive census data." :
+                             epsilon[0] <= 2.0 ? "Moderate — suitable for research partner access." :
+                             epsilon[0] <= 5.0 ? "Acceptable — consider ε ≤ 1 for public release." :
+                             "⚠ Weak — not recommended for sensitive data."}
+                          </span>
+                        </div>
+                        {/* Quick-pick presets */}
+                        <div className="flex gap-1.5 flex-wrap">
+                          {([0.1, 0.5, 1.0, 2.0, 5.0] as number[]).map((v) => (
+                            <button
+                              key={v}
+                              data-testid={`dp-epsilon-preset-${v}`}
+                              onClick={() => setEpsilon([v])}
+                              className={`rounded px-2 py-0.5 text-[10px] font-mono border transition-colors ${
+                                epsilon[0] === v
+                                  ? "bg-purple-600 text-white border-purple-600"
+                                  : "border-border text-muted-foreground hover:border-purple-400 hover:text-purple-600"
+                              }`}
+                            >{v}</button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* δ for Gaussian */}
                       {dpTech === "gaussian" && (
                         <div className="space-y-2">
-                          <Label className="text-sm">Delta (δ)</Label>
+                          <Label className="text-sm">Delta (δ) <span className="text-muted-foreground text-xs">— probability of catastrophic failure</span></Label>
                           <RadioGroup value={String(delta[0])} onValueChange={(v) => setDelta([parseFloat(v)])} className="flex flex-wrap gap-3">
-                            {([["1e-5","1×10⁻⁵"],["1e-6","1×10⁻⁶"]] as [string,string][]).map(([v, label]) => (
+                            {([["1e-5","1×10⁻⁵ (recommended)"],["1e-6","1×10⁻⁶ (stricter)"]] as [string,string][]).map(([v, label]) => (
                               <div key={v} className="flex items-center gap-1.5">
-                                <RadioGroupItem value={v} id={`dp-delta-${v}`} />
+                                <RadioGroupItem value={v} id={`dp-delta-${v}`} data-testid={`dp-delta-${v}`} />
                                 <label htmlFor={`dp-delta-${v}`} className="text-xs font-mono cursor-pointer">{label}</label>
                               </div>
                             ))}
                           </RadioGroup>
-                          <p className="text-xs text-muted-foreground">σ ≥ Δf·√(2 ln(1.25/δ))/ε = {Math.sqrt(2 * Math.log(1.25 / delta[0])) / epsilon[0] > 0 ? (Math.sqrt(2 * Math.log(1.25 / delta[0])) / epsilon[0]).toFixed(3) : "—"} × Δf</p>
+                          <p className="text-xs text-muted-foreground font-mono">
+                            σ = Δf · √(2 ln(1.25/δ)) / ε = <strong>{(Math.sqrt(2 * Math.log(1.25 / delta[0])) / epsilon[0]).toFixed(3)} × Δf</strong>
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Recommended δ ≤ 1/N² = {rawData.length > 0 ? (1 / (rawData.length * rawData.length)).toExponential(2) : "—"} for N = {rawData.length}
+                          </p>
                         </div>
                       )}
+
+                      {/* Exponential info box */}
                       {dpTech === "exponential" && (
-                        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
                           <p className="font-semibold text-foreground">Categorical columns only</p>
-                          <p>The Exponential Mechanism samples from all possible output values with probability ∝ exp(ε·u/2Δu).</p>
+                          <p>Samples each record's category from Pr[output = r] ∝ exp(ε·freq(r) / 2Δu) where Δu = 1/N.</p>
+                          <p>Higher ε = output more strongly biased toward common categories (utility preserved).</p>
                         </div>
                       )}
+
+                      {/* Sensitivity mode (Laplace + Gaussian only) */}
+                      {(dpTech === "laplace" || dpTech === "gaussian") && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold">Sensitivity / Clipping Strategy</Label>
+                          <p className="text-[10px] text-muted-foreground">Controls how the column range (Δf) is computed — affects noise scale and outlier robustness.</p>
+                          <RadioGroup
+                            value={dpSensitivityMode}
+                            onValueChange={(v) => setDpSensitivityMode(v as SensitivityMode)}
+                            className="space-y-1.5"
+                          >
+                            {([
+                              ["auto",       "Auto (Min–Max)",          "Δf = max − min. Uses full observed range. Larger noise but no bias."],
+                              ["iqr",        "IQR-based (outlier-robust)", "Clips to [Q1 − 1.5×IQR, Q3 + 1.5×IQR]. Reduces noise for skewed data."],
+                              ["percentile", "Percentile (1%–99%)",    "Clips to 1st–99th percentile. Balanced outlier handling."],
+                            ] as [SensitivityMode, string, string][]).map(([val, title, desc]) => (
+                              <div key={val} className="flex items-start gap-2">
+                                <RadioGroupItem value={val} id={`dp-sens-${val}`} data-testid={`dp-sens-${val}`} className="mt-0.5" />
+                                <label htmlFor={`dp-sens-${val}`} className="cursor-pointer">
+                                  <span className="text-xs font-medium">{title}</span>
+                                  <span className="block text-[10px] text-muted-foreground">{desc}</span>
+                                </label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      )}
+
+                      {/* Post-clamp toggle (Laplace + Gaussian only) */}
+                      {(dpTech === "laplace" || dpTech === "gaussian") && (
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                          <div>
+                            <Label className="text-sm font-medium">Clamp output to valid range</Label>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              After adding noise, clamp values back to [lo, hi] clipping bounds.
+                              Prevents out-of-range values. Recommended for public release.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={dpPostClamp}
+                            onCheckedChange={setDpPostClamp}
+                            data-testid="dp-postclamp-toggle"
+                          />
+                        </div>
+                      )}
+
+                      {/* Seed */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="text-sm font-medium">Random Seed (reproducibility)</Label>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              When enabled, the same seed + parameters always produce identical output.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={dpSeedEnabled}
+                            onCheckedChange={setDpSeedEnabled}
+                            data-testid="dp-seed-toggle"
+                          />
+                        </div>
+                        {dpSeedEnabled && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={dpSeed}
+                              min={0} max={999999}
+                              onChange={(e) => setDpSeed(Math.max(0, parseInt(e.target.value) || 0))}
+                              data-testid="dp-seed-input"
+                              className="w-28 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                            <span className="text-[10px] text-muted-foreground">Seed value (0–999999)</span>
+                          </div>
+                        )}
+                      </div>
+
                       <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
                     </CardContent>
                   </Card>
+
                   {result && <ResultCard result={result} />}
                 </div>
               </div>
