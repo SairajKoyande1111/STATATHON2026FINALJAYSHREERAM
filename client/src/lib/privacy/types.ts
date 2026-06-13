@@ -11,6 +11,10 @@ export interface PrivacyResult {
   executionMs: number;
   stats: Record<string, string | number>;
   warnings: string[];
+  colStats?: Record<string, Record<string, string | number>>;
+  interpretation?: string;
+  compliancePassed?: boolean | null;
+  report?: string;
 }
 
 export function columnRange(data: DataRow[], col: string): number {

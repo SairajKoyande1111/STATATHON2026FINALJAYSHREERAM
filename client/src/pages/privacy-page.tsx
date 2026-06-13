@@ -93,8 +93,39 @@ function ResultCard({ result }: { result: PrivacyResult }) {
   const lossLabel = result.informationLoss < 0.15 ? "Low" : result.informationLoss < 0.35 ? "Moderate" : "High";
   const retainedPct = result.originalCount > 0 ? (result.processedCount / result.originalCount * 100).toFixed(1) : "100";
 
+  function downloadReport() {
+    if (!result.report) return;
+    const blob = new Blob([result.report], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${result.technique.replace(/\s+/g, "_")}_report.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
+      {/* Compliance badge + title */}
+      {result.compliancePassed !== undefined && result.compliancePassed !== null && (
+        <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
+          result.compliancePassed
+            ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30"
+            : "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30"
+        }`}>
+          <CheckCircle className={`h-5 w-5 shrink-0 ${result.compliancePassed ? "text-emerald-600" : "text-rose-600"}`} />
+          <div className="flex-1">
+            <p className={`text-sm font-semibold ${result.compliancePassed ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
+              Compliance: {result.compliancePassed ? "PASS" : "FAIL"}
+            </p>
+            <p className="text-xs text-muted-foreground">{result.technique} · {result.family}</p>
+          </div>
+          <Badge variant="outline" className={`text-xs font-bold ${result.compliancePassed ? "border-emerald-400 text-emerald-700 dark:text-emerald-400" : "border-rose-400 text-rose-700 dark:text-rose-400"}`}>
+            {result.compliancePassed ? "✓ PASS" : "✗ FAIL"}
+          </Badge>
+        </div>
+      )}
+
       {/* KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="rounded-lg border bg-card p-3">
@@ -119,6 +150,14 @@ function ResultCard({ result }: { result: PrivacyResult }) {
         </div>
       </div>
 
+      {/* Interpretation */}
+      {result.interpretation && (
+        <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-4 py-3">
+          <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1 uppercase tracking-wide">Interpretation</p>
+          <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">{result.interpretation}</p>
+        </div>
+      )}
+
       {/* Stats table */}
       <div className="rounded-lg border overflow-hidden">
         <div className="bg-muted/40 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -128,11 +167,47 @@ function ResultCard({ result }: { result: PrivacyResult }) {
           {Object.entries(result.stats).map(([k, v]) => (
             <div key={k} className="flex justify-between px-4 py-2">
               <span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, " $1")}</span>
-              <span className="font-mono text-xs font-medium max-w-[60%] text-right break-all">{String(v)}</span>
+              <span className={`font-mono text-xs font-medium max-w-[60%] text-right break-all ${
+                String(v) === "YES" ? "text-emerald-600 dark:text-emerald-400" :
+                String(v) === "NO"  ? "text-rose-600 dark:text-rose-400" : ""
+              }`}>{String(v)}</span>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Per-column stats table */}
+      {result.colStats && Object.keys(result.colStats).length > 0 && (
+        <div className="rounded-lg border overflow-hidden">
+          <div className="bg-muted/40 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Per-Column Statistics
+          </div>
+          <ScrollArea className="h-[200px]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/20">
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Column</th>
+                    {Object.values(result.colStats)[0] && Object.keys(Object.values(result.colStats)[0]).map((metric) => (
+                      <th key={metric} className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">{metric}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(result.colStats).map(([col, metrics]) => (
+                    <tr key={col} className="border-b last:border-0 hover:bg-muted/30">
+                      <td className="px-3 py-1.5 font-medium whitespace-nowrap">{col}</td>
+                      {Object.values(metrics).map((v, mi) => (
+                        <td key={mi} className="px-3 py-1.5 font-mono text-right whitespace-nowrap">{String(v)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ScrollArea>
+        </div>
+      )}
 
       {/* Warnings */}
       {result.warnings.length > 0 && (
@@ -178,16 +253,29 @@ function ResultCard({ result }: { result: PrivacyResult }) {
         </div>
       )}
 
-      <Button
-        variant="outline"
-        className="w-full"
-        onClick={() => downloadCSV(result.processedData, `${result.technique.replace(/\s+/g, "_")}_output.csv`)}
-        disabled={result.processedData.length === 0}
-        data-testid="button-download-result"
-      >
-        <Download className="mr-2 h-4 w-4" />
-        Download Processed Data ({result.processedData.length} records)
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          className="flex-1"
+          onClick={() => downloadCSV(result.processedData, `${result.technique.replace(/\s+/g, "_")}_output.csv`)}
+          disabled={result.processedData.length === 0}
+          data-testid="button-download-result"
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Download CSV ({result.processedData.length} records)
+        </Button>
+        {result.report && (
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={downloadReport}
+            data-testid="button-download-report"
+          >
+            <ChevronRight className="mr-2 h-4 w-4" />
+            Download Report (HTML)
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -287,10 +375,15 @@ export default function PrivacyPage() {
   const [suppLimit,       setSuppLimit]       = useState([5]);   // %
   const [lVal,            setLVal]            = useState([3]);
   const [lMethod,         setLMethod]         = useState<"entropy"|"distinct"|"recursive">("entropy");
+  const [lKBase,          setLKBase]          = useState([3]);   // underlying k for l-diversity
+  const [cRecursive,      setCRecursive]      = useState([0.5]); // c for recursive variant
   const [tVal,            setTVal]            = useState([0.3]);
+  const [tKBase,          setTKBase]          = useState([3]);   // underlying k for t-closeness
   const [swapFrac,        setSwapFrac]        = useState([0.1]);
   const [microK,          setMicroK]          = useState([5]);
+  const [microDist,       setMicroDist]       = useState<"euclidean"|"manhattan">("euclidean");
   const [pramRetention,   setPramRetention]   = useState([0.7]);
+  const [pramVariant,     setPramVariant]     = useState<"simple"|"unbiased">("simple");
   const [topPct,          setTopPct]          = useState([95]);
   const [botPct,          setBotPct]          = useState([5]);
   const [addNoise,        setAddNoise]        = useState(false);
@@ -372,19 +465,19 @@ export default function PrivacyPage() {
             res = applyKAnonymity(rawData, quasiIdentifiers, kVal[0], suppLimit[0] / 100);
             break;
           case "l-diversity":
-            res = applyLDiversity(rawData, quasiIdentifiers, sensitiveAttr, lVal[0], lMethod);
+            res = applyLDiversity(rawData, quasiIdentifiers, sensitiveAttr, lVal[0], lMethod, lKBase[0], cRecursive[0]);
             break;
           case "t-closeness":
-            res = applyTCloseness(rawData, quasiIdentifiers, sensitiveAttr, tVal[0]);
+            res = applyTCloseness(rawData, quasiIdentifiers, sensitiveAttr, tVal[0], tKBase[0]);
             break;
           case "rank-swapping":
             res = applyRankSwapping(rawData, cols, swapFrac[0]);
             break;
           case "microagg":
-            res = applyMicroaggregation(rawData, cols, microK[0]);
+            res = applyMicroaggregation(rawData, cols, microK[0], microDist);
             break;
           case "pram":
-            res = applyPRAM(rawData, cols, pramRetention[0]);
+            res = applyPRAM(rawData, cols, pramRetention[0], pramVariant);
             break;
           case "topbottom":
             res = applyTopBottomCoding(rawData, cols, topPct[0], botPct[0], addNoise, noiseLevel[0]);
@@ -439,7 +532,7 @@ export default function PrivacyPage() {
     } finally {
       setRunning(false);
     }
-  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, allCols, kVal, suppLimit, lVal, lMethod, tVal, swapFrac, microK, pramRetention, topPct, botPct, addNoise, noiseLevel, epsilon, delta, synthSize, preserveCorr, dpSgdClip, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, toast]);
+  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, allCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, epsilon, delta, synthSize, preserveCorr, dpSgdClip, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, toast]);
 
   // ─── Shared column pickers ─────────────────────────────────────────────────
   const activeTechId =
@@ -627,6 +720,7 @@ export default function PrivacyPage() {
                       {/* L-Diversity */}
                       {sdcTech === "l-diversity" && (<>
                         <SliderField label="L Value" value={lVal} onChange={setLVal} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Each equivalence class must have ≥ ${lVal[0]} well-represented sensitive values`} />
+                        <SliderField label="Underlying K" value={lKBase} onChange={setLKBase} min={2} max={15} step={1} format={(v) => String(v)} helpText="K-Anonymity base applied before checking l-diversity (k ≤ l recommended)" />
                         <div className="space-y-2">
                           <Label className="text-sm">Variant</Label>
                           <RadioGroup value={lMethod} onValueChange={(v) => setLMethod(v as typeof lMethod)} className="space-y-1">
@@ -638,12 +732,16 @@ export default function PrivacyPage() {
                             ))}
                           </RadioGroup>
                         </div>
+                        {lMethod === "recursive" && (
+                          <SliderField label="c (Recursive)" value={cRecursive} onChange={setCRecursive} min={0.1} max={1} step={0.05} format={(v) => v.toFixed(2)} helpText={`r₁ < c × (r₂ + r₃ + …). Smaller c = stricter constraint.`} />
+                        )}
                       </>)}
 
                       {/* T-Closeness */}
-                      {sdcTech === "t-closeness" && (
+                      {sdcTech === "t-closeness" && (<>
                         <SliderField label="T Threshold" value={tVal} onChange={setTVal} min={0.05} max={1} step={0.05} format={(v) => v.toFixed(2)} helpText={`EMD(local, global) ≤ ${tVal[0].toFixed(2)} — lower = stricter`} />
-                      )}
+                        <SliderField label="Underlying K" value={tKBase} onChange={setTKBase} min={2} max={15} step={1} format={(v) => String(v)} helpText="K-Anonymity base applied before checking t-closeness" />
+                      </>)}
 
                       {/* Rank Swapping */}
                       {sdcTech === "rank-swapping" && (
@@ -651,14 +749,37 @@ export default function PrivacyPage() {
                       )}
 
                       {/* Microaggregation */}
-                      {sdcTech === "microagg" && (
+                      {sdcTech === "microagg" && (<>
                         <SliderField label="Cluster Size (k)" value={microK} onChange={setMicroK} min={2} max={20} step={1} format={(v) => String(v)} helpText="Minimum cluster size for MDAV. Each cluster's values are replaced with the centroid." />
-                      )}
+                        <div className="space-y-2">
+                          <Label className="text-sm">Distance Metric</Label>
+                          <RadioGroup value={microDist} onValueChange={(v) => setMicroDist(v as typeof microDist)} className="flex gap-4">
+                            {[["euclidean","Euclidean (L2)"],["manhattan","Manhattan (L1)"]].map(([v, label]) => (
+                              <div key={v} className="flex items-center gap-2">
+                                <RadioGroupItem value={v} id={`md-${v}`} />
+                                <label htmlFor={`md-${v}`} className="text-xs cursor-pointer">{label}</label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      </>)}
 
                       {/* PRAM */}
-                      {sdcTech === "pram" && (
+                      {sdcTech === "pram" && (<>
                         <SliderField label="Retention Probability" value={pramRetention} onChange={setPramRetention} min={0.1} max={0.99} step={0.01} format={(v) => v.toFixed(2)} helpText={`P(keep original) = ${pramRetention[0].toFixed(2)}, P(perturb) = ${(1 - pramRetention[0]).toFixed(2)}`} />
-                      )}
+                        <div className="space-y-2">
+                          <Label className="text-sm">PRAM Variant</Label>
+                          <RadioGroup value={pramVariant} onValueChange={(v) => setPramVariant(v as typeof pramVariant)} className="flex gap-4">
+                            {[["simple","Simple PRAM"],["unbiased","Unbiased PRAM"]].map(([v, label]) => (
+                              <div key={v} className="flex items-center gap-2">
+                                <RadioGroupItem value={v} id={`pv-${v}`} />
+                                <label htmlFor={`pv-${v}`} className="text-xs cursor-pointer">{label}</label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                          <p className="text-xs text-muted-foreground">Unbiased: post-processing correction to restore marginal distributions</p>
+                        </div>
+                      </>)}
 
                       {/* Top/Bottom Coding */}
                       {sdcTech === "topbottom" && (<>
