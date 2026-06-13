@@ -1237,3 +1237,735 @@ export function applyTopBottomCoding(
     report,
   };
 }
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// 8. NOISE ADDITION (Gaussian / Laplace / Uniform)
+//    Ref: SDC Spec §8 — proportional σ_noise = λ × col_std
+// ════════════════════════════════════════════════════════════════════════════
+
+export function applyNoiseAddition(
+  data: DataRow[],
+  targetCols: string[],
+  distribution: "gaussian" | "laplace" | "uniform",
+  lambdaNoise: number,
+  clipToRange: boolean,
+  seed = 42,
+): PrivacyResult {
+  const t0 = performance.now();
+  if (data.length === 0) return sdcEmpty("Noise Addition");
+  const N = data.length;
+  const numericCols = targetCols.filter((c) => isNumericCol(data, c));
+  if (numericCols.length === 0) {
+    return { ...sdcEmpty("Noise Addition"), warnings: ["No numeric target columns selected."] };
+  }
+
+  let rngState = (seed >>> 0) + 0x6D2B79F5;
+  function rng(): number {
+    rngState = (rngState + 0x6D2B79F5) >>> 0;
+    let z = rngState;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+  }
+  function sampleGaussian(): number {
+    const u1 = rng() + 1e-10, u2 = rng();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  }
+  function sampleLaplace(b: number): number {
+    const u = rng() - 0.5;
+    return -b * Math.sign(u) * Math.log(1 - 2 * Math.abs(u) + 1e-12);
+  }
+
+  const colStats: Record<string, Record<string, string | number>> = {};
+  const processed: DataRow[] = data.map((r) => ({ ...r }));
+  let totalInfoLoss = 0;
+
+  numericCols.forEach((col) => {
+    const origVals = data.map((r) => Number(r[col])).filter((v) => !isNaN(v));
+    if (origVals.length === 0) return;
+    const colMean   = mean(origVals);
+    const colStd    = stddev(origVals);
+    const colMin    = Math.min(...origVals);
+    const colMax    = Math.max(...origVals);
+    const sigmaNoise = lambdaNoise * colStd;
+
+    data.forEach((row, i) => {
+      const v = Number(row[col]);
+      if (isNaN(v)) return;
+      let eps: number;
+      if (distribution === "gaussian") {
+        eps = sigmaNoise * sampleGaussian();
+      } else if (distribution === "laplace") {
+        const b = sigmaNoise / Math.SQRT2;
+        eps = sampleLaplace(b);
+      } else {
+        const delta = sigmaNoise * Math.sqrt(3);
+        eps = delta * (2 * rng() - 1);
+      }
+      let noisy = v + eps;
+      if (clipToRange) noisy = Math.max(colMin, Math.min(colMax, noisy));
+      processed[i][col] = parseFloat(noisy.toFixed(6));
+    });
+
+    const noisyVals  = processed.map((r) => Number(r[col]));
+    const noisyMean  = mean(noisyVals);
+    const noisyStd   = stddev(noisyVals);
+    const mae        = mean(noisyVals.map((v, i) => Math.abs(v - origVals[i])));
+    const pearson    = pearsonR(origVals, noisyVals);
+    const snr        = sigmaNoise > 0 ? (colStd * colStd) / (sigmaNoise * sigmaNoise) : Infinity;
+    const meanShiftPct = colMean !== 0 ? Math.abs(noisyMean - colMean) / Math.abs(colMean) * 100 : 0;
+    const varInflPct   = colStd > 0 ? ((noisyStd * noisyStd - colStd * colStd) / (colStd * colStd)) * 100 : 0;
+
+    colStats[col] = {
+      "σ_noise":       sigmaNoise.toFixed(4),
+      "SNR":           snr === Infinity ? "∞" : snr.toFixed(2),
+      "MAE":           mae.toFixed(4),
+      "Pearson r":     pearson.toFixed(4),
+      "Mean Shift":    `${meanShiftPct.toFixed(2)}%`,
+      "Var Inflation": `${varInflPct.toFixed(2)}%`,
+    };
+    totalInfoLoss += Math.min(1, 1 - pearson);
+  });
+
+  const avgInfoLoss = numericCols.length > 0 ? totalInfoLoss / numericCols.length : 0;
+  const avgPearson  = numericCols.length > 0
+    ? mean(numericCols.map((c) => parseFloat(String(colStats[c]?.["Pearson r"] ?? "1")))) : 1;
+  const finiteSnrs  = numericCols
+    .filter((c) => colStats[c]?.["SNR"] !== "∞")
+    .map((c) => parseFloat(String(colStats[c]?.["SNR"] ?? "100")));
+  const avgSnr = finiteSnrs.length > 0 ? mean(finiteSnrs) : Infinity;
+  const compliancePassed = avgPearson >= 0.85 && lambdaNoise <= 0.5;
+
+  const warnings: string[] = [
+    ...(lambdaNoise > 0.5 ? ["High noise (λ > 0.5): data utility severely degraded. Reduce λ."] : []),
+    ...(avgPearson < 0.85 ? [`Low avg Pearson r=${avgPearson.toFixed(3)} — consider reducing λ.`] : []),
+    ...(!clipToRange ? ["Clipping disabled — noisy values may exceed original data range."] : []),
+  ];
+
+  const now = new Date().toLocaleString("en-IN");
+  const colTable = numericCols.map((c) => htmlRow(c,
+    `σ=${colStats[c]["σ_noise"]} SNR=${colStats[c]["SNR"]} MAE=${colStats[c]["MAE"]} r=${colStats[c]["Pearson r"]} shift=${colStats[c]["Mean Shift"]}`
+  )).join("");
+
+  const distLabel = distribution.charAt(0).toUpperCase() + distribution.slice(1);
+  const interp = `Noise was injected into ${numericCols.length} column(s) using the ${distLabel} distribution with λ=${lambdaNoise}. ` +
+    `Avg SNR = ${avgSnr === Infinity ? "∞" : avgSnr.toFixed(2)}. Mean values preserved within ≈${(lambdaNoise * 100).toFixed(0)}% of original. ` +
+    `Avg Pearson r = ${avgPearson.toFixed(3)} — ${avgPearson > 0.95 ? "high" : avgPearson > 0.85 ? "moderate" : "low"} utility. ` +
+    (clipToRange ? "Values clipped to original column ranges after injection." : "No clipping applied.");
+
+  const report = buildReport(
+    "Noise Addition", "dataset", now, N, N,
+    htmlRow("Distribution", distLabel) +
+    htmlRow("Noise Multiplier (λ)", lambdaNoise.toFixed(3)) +
+    htmlRow("Clip to Range", clipToRange ? "YES" : "NO") +
+    htmlRow("Target Columns", numericCols.join(", ")),
+    htmlRow("Compliance (r ≥ 0.85, λ ≤ 0.5)", compliancePassed ? "YES" : "NO", compliancePassed) +
+    htmlRow("Avg Pearson r", avgPearson.toFixed(4), avgPearson >= 0.85) +
+    htmlRow("Avg SNR", avgSnr === Infinity ? "∞" : avgSnr.toFixed(2), avgSnr >= 10),
+    colTable, interp, warnings,
+  );
+
+  return {
+    technique: `Noise Addition (${distLabel})`, family: "SDC",
+    processedData: processed, originalCount: N, processedCount: N,
+    recordsSuppressed: 0,
+    informationLoss: Math.min(1, avgInfoLoss),
+    executionMs: Math.round(performance.now() - t0),
+    stats: {
+      distribution: distLabel,
+      noiseLambda:      lambdaNoise,
+      clipToRange:      clipToRange ? "YES" : "NO",
+      columnsProcessed: numericCols.length,
+      avgPearsonR:      avgPearson.toFixed(4),
+      avgSNR:           avgSnr === Infinity ? "∞" : avgSnr.toFixed(2),
+    },
+    colStats, warnings, interpretation: interp, compliancePassed, report,
+  };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// 9. EXPLICIT SUPPRESSION (Row / Cell / Both)
+//    Ref: SDC Spec §9 — deliberate suppression by rule
+// ════════════════════════════════════════════════════════════════════════════
+
+export function applyExplicitSuppression(
+  data: DataRow[],
+  mode: "row" | "cell" | "both",
+  criterion: "uniqueness" | "outlier" | "sensitive_value" | "threshold",
+  params: {
+    qiCols?: string[];
+    minGroupSize?: number;
+    zThreshold?: number;
+    targetCols?: string[];
+    saCol?: string;
+    riskValues?: string[];
+    lowerBound?: number;
+    upperBound?: number;
+    minCellFrequency?: number;
+  },
+  suppressionBudgetPct: number,
+): PrivacyResult {
+  const t0 = performance.now();
+  if (data.length === 0) return sdcEmpty("Explicit Suppression");
+  const N = data.length;
+  const maxSuppress = Math.ceil(suppressionBudgetPct * N);
+
+  const processed: DataRow[] = data.map((r) => ({ ...r }));
+  const suppressedRowSet = new Set<number>();
+  const suppressedCells: [number, string][] = [];
+
+  // --- ROW SUPPRESSION ---
+  if (mode === "row" || mode === "both") {
+    let candidates: number[] = [];
+
+    if (criterion === "uniqueness") {
+      const qiCols = params.qiCols ?? [];
+      const groupKey = (row: DataRow) => qiCols.map((c) => String(row[c] ?? "")).join("|");
+      const groupSizes = new Map<string, number>();
+      data.forEach((r) => { const k = groupKey(r); groupSizes.set(k, (groupSizes.get(k) || 0) + 1); });
+      const minGrp = params.minGroupSize ?? 2;
+      candidates = data.map((r, i) => ({ r, i }))
+        .filter(({ r }) => (groupSizes.get(groupKey(r)) ?? 1) < minGrp).map(({ i }) => i);
+
+    } else if (criterion === "outlier") {
+      const tCols = params.targetCols ?? Object.keys(data[0] ?? {}).filter((c) => isNumericCol(data, c));
+      const zThr = params.zThreshold ?? 3.0;
+      const outlierSet = new Set<number>();
+      tCols.forEach((col) => {
+        const vals = data.map((r) => Number(r[col])).filter((v) => !isNaN(v));
+        const mu = mean(vals), sigma = stddev(vals);
+        if (sigma === 0) return;
+        data.forEach((r, i) => {
+          if (!isNaN(Number(r[col])) && Math.abs(Number(r[col]) - mu) > zThr * sigma) outlierSet.add(i);
+        });
+      });
+      candidates = Array.from(outlierSet);
+
+    } else if (criterion === "sensitive_value") {
+      const saCol = params.saCol ?? "";
+      const riskVals = new Set(params.riskValues ?? []);
+      candidates = data.map((r, i) => ({ r, i }))
+        .filter(({ r }) => riskVals.has(String(r[saCol] ?? ""))).map(({ i }) => i);
+
+    } else if (criterion === "threshold") {
+      const tCol = params.targetCols?.[0] ?? "";
+      const lo = params.lowerBound ?? -Infinity;
+      const hi = params.upperBound ?? Infinity;
+      candidates = data.map((r, i) => ({ r, i }))
+        .filter(({ r }) => { const v = Number(r[tCol]); return !isNaN(v) && (v < lo || v > hi); })
+        .map(({ i }) => i);
+    }
+
+    candidates.slice(0, maxSuppress).forEach((i) => suppressedRowSet.add(i));
+  }
+
+  // --- CELL-LEVEL SUPPRESSION ---
+  if (mode === "cell" || mode === "both") {
+    const tCols = params.targetCols ?? (data.length > 0 ? Object.keys(data[0]) : []);
+    const minFreq = params.minCellFrequency ?? 3;
+    tCols.forEach((col) => {
+      const freqMap = new Map<string, number>();
+      data.forEach((r) => { const v = String(r[col] ?? ""); freqMap.set(v, (freqMap.get(v) || 0) + 1); });
+      data.forEach((r, i) => {
+        if ((freqMap.get(String(r[col] ?? "")) ?? 0) < minFreq) {
+          processed[i][col] = "***";
+          suppressedCells.push([i, col]);
+        }
+      });
+    });
+  }
+
+  const finalData = processed.filter((_, i) => !suppressedRowSet.has(i));
+  const rowsSuppressed = suppressedRowSet.size;
+  const cellsSuppressed = suppressedCells.length;
+  const rowSuppRate = N > 0 ? rowsSuppressed / N : 0;
+  const cellSuppRate = N > 0 && data[0] ? cellsSuppressed / (N * Object.keys(data[0]).length) : 0;
+  const budgetUsed = maxSuppress > 0 ? rowsSuppressed / maxSuppress : 0;
+  const compliancePassed = rowSuppRate <= suppressionBudgetPct;
+
+  const interp = `Explicit suppression in "${mode}" mode using the "${criterion}" criterion. ` +
+    (mode !== "cell" ? `${rowsSuppressed} rows (${(rowSuppRate*100).toFixed(1)}%) suppressed — budget: ${(budgetUsed*100).toFixed(1)}%. ` : "") +
+    (mode !== "row" ? `${cellsSuppressed} cells suppressed at cell level. ` : "") +
+    `Records retained: ${finalData.length} of ${N}.`;
+
+  const warnings: string[] = [
+    ...(rowSuppRate > suppressionBudgetPct ? [`Row suppression ${(rowSuppRate*100).toFixed(1)}% exceeds budget ${(suppressionBudgetPct*100).toFixed(0)}%.`] : []),
+    ...(rowsSuppressed === 0 && (mode === "row" || mode === "both") ? ["No rows matched the suppression criterion."] : []),
+    ...(cellsSuppressed === 0 && (mode === "cell" || mode === "both") ? ["No cells matched the frequency threshold."] : []),
+  ];
+
+  const now = new Date().toLocaleString("en-IN");
+  const report = buildReport(
+    "Explicit Suppression", "dataset", now, N, finalData.length,
+    htmlRow("Mode", mode) + htmlRow("Criterion", criterion) +
+    htmlRow("Suppression Budget", `${(suppressionBudgetPct*100).toFixed(0)}%`) +
+    (criterion === "uniqueness" ? htmlRow("Min Group Size", params.minGroupSize ?? 2) : "") +
+    (criterion === "outlier" ? htmlRow("Z Threshold", params.zThreshold ?? 3.0) : "") +
+    (criterion === "sensitive_value" ? htmlRow("Risk Values", (params.riskValues ?? []).join(", ")) : "") +
+    (criterion === "threshold" ? htmlRow("Bounds", `[${params.lowerBound ?? "−∞"}, ${params.upperBound ?? "+∞"}]`) : ""),
+    htmlRow("Compliance", compliancePassed ? "YES" : "NO", compliancePassed) +
+    htmlRow("Rows Suppressed", `${rowsSuppressed} (${(rowSuppRate*100).toFixed(1)}%)`, rowSuppRate <= suppressionBudgetPct) +
+    htmlRow("Cells Suppressed", cellsSuppressed) +
+    htmlRow("Budget Utilisation", `${(budgetUsed*100).toFixed(1)}%`) +
+    htmlRow("Records Retained", finalData.length),
+    "", interp, warnings,
+  );
+
+  return {
+    technique: "Explicit Suppression", family: "SDC",
+    processedData: finalData, originalCount: N, processedCount: finalData.length,
+    recordsSuppressed: rowsSuppressed,
+    informationLoss: Math.min(1, rowSuppRate + cellSuppRate * 0.3),
+    executionMs: Math.round(performance.now() - t0),
+    stats: {
+      mode, criterion,
+      rowsSuppressed,
+      rowSuppressionRate:  `${(rowSuppRate*100).toFixed(1)}%`,
+      cellsSuppressed,
+      cellSuppressionRate: `${(cellSuppRate*100).toFixed(3)}%`,
+      budgetUtilisation:   `${(budgetUsed*100).toFixed(1)}%`,
+      recordsRetained:     finalData.length,
+    },
+    warnings, interpretation: interp, compliancePassed, report,
+  };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// 10. GENERALISATION — standalone (Bin / Round / Top-K)
+//     Ref: SDC Spec §10 — per-column without QI/SA
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface GeneralisationColConfig {
+  col: string;
+  type: "bin" | "round" | "topk";
+  binWidth?: number;
+  roundTo?: number;
+  topK?: number;
+}
+
+export function applyGeneralisation(
+  data: DataRow[],
+  colConfigs: GeneralisationColConfig[],
+): PrivacyResult {
+  const t0 = performance.now();
+  if (data.length === 0 || colConfigs.length === 0) return sdcEmpty("Generalisation");
+  const N = data.length;
+
+  const processed: DataRow[] = data.map((r) => ({ ...r }));
+  const colStats: Record<string, Record<string, string | number>> = {};
+  let totalIL = 0;
+
+  colConfigs.forEach(({ col, type, binWidth, roundTo, topK }) => {
+    const origVals = data.map((r) => r[col]);
+    let il = 0;
+
+    if (type === "bin") {
+      const nums = origVals.map((v) => Number(v)).filter((v) => !isNaN(v));
+      if (nums.length === 0) return;
+      const lo = Math.min(...nums), hi = Math.max(...nums);
+      const range = hi - lo || 1;
+      const bw = binWidth && binWidth > 0 ? binWidth : range / Math.max(1, Math.ceil(Math.log2(N) + 1));
+      data.forEach((row, i) => {
+        const v = Number(row[col]);
+        if (isNaN(v)) return;
+        const binLo = Math.floor(v / bw) * bw;
+        processed[i][col] = `${binLo.toFixed(2)}–${(binLo + bw).toFixed(2)}`;
+      });
+      il = Math.min(1, bw / range);
+      const uBefore = new Set(origVals.map(String)).size;
+      const uAfter  = new Set(processed.map((r) => String(r[col]))).size;
+      colStats[col] = { "Type": "bin", "Bin Width": bw.toFixed(4), "IL Score": il.toFixed(4), "Unique Before": uBefore, "Unique After": uAfter };
+
+    } else if (type === "round") {
+      const rt = roundTo && roundTo > 0 ? roundTo : 10;
+      const nums = origVals.map((v) => Number(v)).filter((v) => !isNaN(v));
+      const colStdv = stddev(nums);
+      let absErrTotal = 0;
+      data.forEach((row, i) => {
+        const v = Number(row[col]);
+        if (isNaN(v)) return;
+        const rounded = Math.round(v / rt) * rt;
+        processed[i][col] = rounded;
+        absErrTotal += Math.abs(rounded - v);
+      });
+      il = colStdv > 0 ? Math.min(1, (absErrTotal / N) / colStdv) : 0;
+      const uBefore = new Set(origVals.map(String)).size;
+      const uAfter  = new Set(processed.map((r) => String(r[col]))).size;
+      colStats[col] = { "Type": "round", "Round To": rt, "IL Score": il.toFixed(4), "Unique Before": uBefore, "Unique After": uAfter, "Avg Abs Error": (absErrTotal / N).toFixed(4) };
+
+    } else if (type === "topk") {
+      const k = topK && topK > 0 ? topK : 10;
+      const freqMap = new Map<string, number>();
+      origVals.forEach((v) => freqMap.set(String(v), (freqMap.get(String(v)) || 0) + 1));
+      const topKVals = new Set(
+        Array.from(freqMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, k).map(([v]) => v)
+      );
+      let changed = 0;
+      data.forEach((row, i) => {
+        if (!topKVals.has(String(row[col]))) { processed[i][col] = "Other"; changed++; }
+      });
+      il = changed / N;
+      const uBefore = new Set(origVals.map(String)).size;
+      const uAfter  = new Set(processed.map((r) => String(r[col]))).size;
+      colStats[col] = { "Type": "top-k", "K": k, "IL Score": il.toFixed(4), "Unique Before": uBefore, "Unique After": uAfter, "Other Rate": `${(il*100).toFixed(1)}%` };
+    }
+
+    totalIL += il;
+  });
+
+  const avgIL = colConfigs.length > 0 ? totalIL / colConfigs.length : 0;
+  const compliancePassed = avgIL < 0.5;
+
+  const interp = `Generalisation applied to ${colConfigs.length} column(s). Avg IL = ${(avgIL*100).toFixed(1)}%. ` +
+    colConfigs.map(({ col, type }) => {
+      const s = colStats[col]; if (!s) return "";
+      if (type === "bin")   return `"${col}" binned (bw=${s["Bin Width"]}, ${s["Unique After"]} bins).`;
+      if (type === "round") return `"${col}" rounded to ${s["Round To"]} (${s["Unique After"]} unique).`;
+      if (type === "topk")  return `"${col}" top-${s["K"]} kept; ${s["Other Rate"]} → "Other".`;
+      return "";
+    }).filter(Boolean).join(" ");
+
+  const warnings: string[] = [
+    ...(avgIL > 0.5 ? ["High avg information loss (> 50%). Adjust generalisation parameters."] : []),
+    ...colConfigs.filter(({ col }) => Number(colStats[col]?.["Unique After"]) === 1)
+      .map(({ col }) => `"${col}" fully generalised to one value — effectively suppressed.`),
+    ...colConfigs.filter(({ col, type }) => type === "topk" && parseFloat(String(colStats[col]?.["Other Rate"] ?? "0")) > 30)
+      .map(({ col }) => `Over 30% of "${col}" → "Other". Increase Top-K.`),
+  ];
+
+  const now = new Date().toLocaleString("en-IN");
+  const colTable = colConfigs.map(({ col }) => {
+    const s = colStats[col]; if (!s) return "";
+    return htmlRow(col, `type=${s["Type"]} IL=${s["IL Score"]} unique: ${s["Unique Before"]}→${s["Unique After"]}`);
+  }).join("");
+
+  const report = buildReport(
+    "Generalisation", "dataset", now, N, N,
+    colConfigs.map(({ col, type, binWidth, roundTo, topK }) =>
+      htmlRow(col, `${type}${type === "bin" ? ` bw=${binWidth ?? "auto"}` : type === "round" ? ` rt=${roundTo ?? 10}` : ` k=${topK ?? 10}`}`)
+    ).join(""),
+    htmlRow("Compliance (avg IL < 0.5)", compliancePassed ? "YES" : "NO", compliancePassed) +
+    htmlRow("Avg Information Loss", `${(avgIL*100).toFixed(2)}%`, avgIL < 0.3) +
+    htmlRow("Columns Generalised", colConfigs.length),
+    colTable, interp, warnings,
+  );
+
+  return {
+    technique: "Generalisation (Standalone)", family: "SDC",
+    processedData: processed, originalCount: N, processedCount: N,
+    recordsSuppressed: 0,
+    informationLoss: Math.min(1, avgIL),
+    executionMs: Math.round(performance.now() - t0),
+    stats: { columnsGeneralised: colConfigs.length, avgInformationLoss: `${(avgIL*100).toFixed(2)}%` },
+    colStats, warnings, interpretation: interp, compliancePassed, report,
+  };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// 11. DATA SHUFFLING (Full / Within-Group / Rank-Preserving)
+//     Ref: SDC Spec §11 — permutation-based QI↔SA unlinking
+// ════════════════════════════════════════════════════════════════════════════
+
+export function applyDataShuffling(
+  data: DataRow[],
+  targetCols: string[],
+  variant: "full" | "within_group" | "rank_preserving",
+  groupCol: string | null,
+  rankDelta: number,
+  seed = 42,
+): PrivacyResult {
+  const t0 = performance.now();
+  if (data.length === 0 || targetCols.length === 0) return sdcEmpty("Data Shuffling");
+  const N = data.length;
+
+  let rngState = (seed >>> 0) + 0x6D2B79F5;
+  function rng(): number {
+    rngState = (rngState + 0x6D2B79F5) >>> 0;
+    let z = rngState;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+  }
+  function fisherYates(n: number): number[] {
+    const a = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+
+  const processed: DataRow[] = data.map((r) => ({ ...r }));
+  const colStats: Record<string, Record<string, string | number>> = {};
+
+  targetCols.forEach((col) => {
+    const origVals = data.map((r) => r[col]);
+
+    if (variant === "full") {
+      const perm = fisherYates(N);
+      perm.forEach((srcIdx, dstIdx) => { processed[dstIdx][col] = origVals[srcIdx]; });
+
+    } else if (variant === "within_group") {
+      if (!groupCol) {
+        const perm = fisherYates(N);
+        perm.forEach((srcIdx, dstIdx) => { processed[dstIdx][col] = origVals[srcIdx]; });
+      } else {
+        const groups = new Map<string, number[]>();
+        data.forEach((r, i) => {
+          const gv = String(r[groupCol] ?? "");
+          if (!groups.has(gv)) groups.set(gv, []);
+          groups.get(gv)!.push(i);
+        });
+        groups.forEach((indices) => {
+          const vals = indices.map((i) => origVals[i]);
+          const perm = fisherYates(indices.length);
+          indices.forEach((dstIdx, k) => { processed[dstIdx][col] = vals[perm[k]]; });
+        });
+      }
+
+    } else {
+      // rank_preserving
+      const delta = Math.max(1, Math.round(rankDelta * N));
+      const isNum = isNumericCol(data, col);
+      const keys  = isNum
+        ? data.map((r) => Number(r[col]))
+        : data.map((r) => String(r[col] ?? ""));
+      const sortedIdx = (keys as (number | string)[]).map((_, i) => i).sort((a, b) => {
+        const ka = keys[a], kb = keys[b];
+        return typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb));
+      });
+      const rankOf = new Array(N).fill(0);
+      sortedIdx.forEach((origIdx, rank) => { rankOf[origIdx] = rank; });
+      const assigned = new Array(N).fill(false);
+      const resultVals = [...origVals];
+      const order = fisherYates(N);
+      order.forEach((i) => {
+        if (assigned[i]) return;
+        const rankI = rankOf[i];
+        const lo = Math.max(0, rankI - delta), hi = Math.min(N - 1, rankI + delta);
+        const cands: number[] = [];
+        for (let r = lo; r <= hi; r++) { const j = sortedIdx[r]; if (!assigned[j] && j !== i) cands.push(j); }
+        if (cands.length > 0) {
+          const j = cands[Math.floor(rng() * cands.length)];
+          resultVals[i] = origVals[j]; resultVals[j] = origVals[i];
+          assigned[i] = true; assigned[j] = true;
+        }
+      });
+      resultVals.forEach((v, i) => { processed[i][col] = v; });
+    }
+
+    const newVals = processed.map((r) => r[col]);
+    const changed = newVals.filter((v, i) => String(v) !== String(origVals[i])).length;
+    const distOK = JSON.stringify([...origVals].map(String).sort()) === JSON.stringify([...newVals].map(String).sort());
+    let pearsonSelf = NaN;
+    if (isNumericCol(data, col)) {
+      pearsonSelf = pearsonR(origVals.map((v) => Number(v)), newVals.map((v) => Number(v)));
+    }
+    colStats[col] = {
+      "Values Changed":         `${changed} (${(changed/N*100).toFixed(1)}%)`,
+      "Distribution Preserved": distOK ? "YES" : "NO",
+      ...(!isNaN(pearsonSelf) ? { "Pearson r (self)": pearsonSelf.toFixed(4) } : {}),
+    };
+  });
+
+  const numCols = targetCols.filter((c) => isNumericCol(data, c));
+  const avgPearson = numCols.length > 0
+    ? mean(numCols.map((c) => parseFloat(String(colStats[c]?.["Pearson r (self)"] ?? "0")))) : NaN;
+  const compliancePassed = targetCols.every((c) => colStats[c]?.["Distribution Preserved"] === "YES");
+
+  const variantLabel = variant === "full" ? "Full" : variant === "within_group" ? "Within-Group" : "Rank-Preserving";
+  const interp = `Data shuffling (${variantLabel}) applied to ${targetCols.length} column(s). ` +
+    `Marginal distribution preserved: ${compliancePassed ? "YES" : "FAIL"}. ` +
+    (!isNaN(avgPearson)
+      ? `Avg Pearson r (original vs shuffled) = ${avgPearson.toFixed(3)} — QI↔SA linkage ${Math.abs(avgPearson) < 0.2 ? "effectively severed" : "partially disrupted"}.`
+      : "");
+
+  const warnings: string[] = [
+    ...(!compliancePassed ? ["Distribution NOT preserved — check implementation."] : []),
+    ...(variant === "within_group" && !groupCol ? ["No group column — fell back to full shuffle."] : []),
+    ...(!isNaN(avgPearson) && Math.abs(avgPearson) > 0.2
+      ? [`Residual correlation r=${avgPearson.toFixed(3)} — consider Full variant for stronger unlinking.`] : []),
+  ];
+
+  const now = new Date().toLocaleString("en-IN");
+  const colTable = targetCols.map((c) => htmlRow(c,
+    `changed=${colStats[c]["Values Changed"]} dist=${colStats[c]["Distribution Preserved"]}${colStats[c]["Pearson r (self)"] ? ` r=${colStats[c]["Pearson r (self)"]}` : ""}`
+  )).join("");
+
+  const report = buildReport(
+    "Data Shuffling", "dataset", now, N, N,
+    htmlRow("Variant", variantLabel) + htmlRow("Target Columns", targetCols.join(", ")) +
+    (groupCol ? htmlRow("Group Column", groupCol) : "") +
+    (variant === "rank_preserving" ? htmlRow("Rank Delta (δ)", rankDelta.toFixed(2)) : ""),
+    htmlRow("Distribution Preserved", compliancePassed ? "YES" : "NO", compliancePassed) +
+    (!isNaN(avgPearson) ? htmlRow("Avg Pearson r (self)", avgPearson.toFixed(4), Math.abs(avgPearson) < 0.2) : ""),
+    colTable, interp, warnings,
+  );
+
+  return {
+    technique: `Data Shuffling (${variantLabel})`, family: "SDC",
+    processedData: processed, originalCount: N, processedCount: N,
+    recordsSuppressed: 0,
+    informationLoss: isNaN(avgPearson) ? 0.5 : Math.min(1, Math.max(0, 1 - Math.abs(avgPearson))),
+    executionMs: Math.round(performance.now() - t0),
+    stats: {
+      variant: variantLabel,
+      targetColumns:        targetCols.length,
+      groupColumn:          groupCol ?? "N/A",
+      rankDelta:            variant === "rank_preserving" ? rankDelta : "N/A",
+      distributionPreserved: compliancePassed ? "YES" : "NO",
+      avgPearsonR:          isNaN(avgPearson) ? "N/A" : avgPearson.toFixed(4),
+    },
+    colStats, warnings, interpretation: interp, compliancePassed, report,
+  };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// 12. CELL SUPPRESSION (Statistical Tables)
+//     Ref: SDC Spec §12 — primary + secondary suppression on aggregated tables
+// ════════════════════════════════════════════════════════════════════════════
+
+export function applyCellSuppression(
+  data: DataRow[],
+  rowCol: string,
+  colCol: string,
+  valueCol: string,
+  aggregate: "count" | "sum" | "mean",
+  nMin: number,
+  pPct: number,
+  kDominance: number,
+  applySecondary: boolean,
+): PrivacyResult {
+  const t0 = performance.now();
+  if (data.length === 0) return sdcEmpty("Cell Suppression");
+  const N = data.length;
+
+  const rowVals = Array.from(new Set(data.map((r) => String(r[rowCol] ?? "")))).sort();
+  const colVals = Array.from(new Set(data.map((r) => String(r[colCol] ?? "")))).sort();
+  const R = rowVals.length, C = colVals.length;
+
+  if (R === 0 || C === 0) {
+    return { ...sdcEmpty("Cell Suppression"), warnings: ["Selected columns produce an empty table."] };
+  }
+
+  interface Cell { value: number; count: number; contributions: number[]; display: string }
+
+  const table: Cell[][] = rowVals.map((rv) =>
+    colVals.map((cv) => {
+      const sub = data.filter((r) => String(r[rowCol]) === rv && String(r[colCol]) === cv);
+      const contribs = sub.map((r) => Number(r[valueCol])).filter((v) => !isNaN(v));
+      const val = aggregate === "count" ? sub.length
+        : aggregate === "sum" ? contribs.reduce((s, v) => s + v, 0)
+        : contribs.length > 0 ? mean(contribs) : 0;
+      return { value: val, count: sub.length, contributions: contribs, display: val.toFixed(2) };
+    })
+  );
+
+  const rowMarginals = rowVals.map((_, ri) => colVals.reduce((s, _cv, ci) => s + table[ri][ci].value, 0));
+  const colMarginals = colVals.map((_, ci) => rowVals.reduce((s, _rv, ri) => s + table[ri][ci].value, 0));
+
+  const suppressed = new Set<string>();
+  const cellKey = (ri: number, ci: number) => `${ri}_${ci}`;
+
+  // PRIMARY suppression
+  for (let ri = 0; ri < R; ri++) {
+    for (let ci = 0; ci < C; ci++) {
+      const cell = table[ri][ci];
+      if (cell.count < nMin) { suppressed.add(cellKey(ri, ci)); continue; }
+      if (cell.value > 0 && cell.contributions.length >= kDominance) {
+        const sorted = [...cell.contributions].sort((a, b) => b - a);
+        const topSum = sorted.slice(0, kDominance).reduce((s, v) => s + v, 0);
+        if (topSum / cell.value > pPct / 100) suppressed.add(cellKey(ri, ci));
+      }
+    }
+  }
+  const primaryCount = suppressed.size;
+
+  // SECONDARY suppression (greedy)
+  if (applySecondary) {
+    let changed = true, iters = 0;
+    while (changed && iters < R * C * 2) {
+      changed = false; iters++;
+      for (const k of Array.from(suppressed)) {
+        const [ri, ci] = k.split("_").map(Number);
+        // row back-calc check
+        const rowKnown = colVals.reduce((s, _cv, j) => suppressed.has(cellKey(ri, j)) ? s : s + table[ri][j].value, 0);
+        if (Math.abs(rowMarginals[ri] - rowKnown - table[ri][ci].value) < 1e-6) {
+          let bestJ = -1, bestV = Infinity;
+          for (let j = 0; j < C; j++) { if (!suppressed.has(cellKey(ri, j)) && table[ri][j].value < bestV) { bestV = table[ri][j].value; bestJ = j; } }
+          if (bestJ >= 0) { suppressed.add(cellKey(ri, bestJ)); changed = true; }
+        }
+        // col back-calc check
+        const colKnown = rowVals.reduce((s, _rv, i) => suppressed.has(cellKey(i, ci)) ? s : s + table[i][ci].value, 0);
+        if (Math.abs(colMarginals[ci] - colKnown - table[ri][ci].value) < 1e-6) {
+          let bestI = -1, bestV = Infinity;
+          for (let i = 0; i < R; i++) { if (!suppressed.has(cellKey(i, ci)) && table[i][ci].value < bestV) { bestV = table[i][ci].value; bestI = i; } }
+          if (bestI >= 0) { suppressed.add(cellKey(bestI, ci)); changed = true; }
+        }
+      }
+    }
+  }
+
+  const secondaryCount = suppressed.size - primaryCount;
+  const il = suppressed.size / (R * C);
+
+  // Build output table as DataRow[]
+  const outputRows: DataRow[] = rowVals.map((rv, ri) => {
+    const row: DataRow = { [rowCol]: rv };
+    colVals.forEach((cv, ci) => { row[cv] = suppressed.has(cellKey(ri, ci)) ? "*" : table[ri][ci].display; });
+    row["Row Total"] = rowMarginals[ri].toFixed(2);
+    return row;
+  });
+  const totRow: DataRow = { [rowCol]: "Column Total" };
+  colVals.forEach((cv, ci) => { totRow[cv] = colMarginals[ci].toFixed(2); });
+  totRow["Row Total"] = rowMarginals.reduce((s, v) => s + v, 0).toFixed(2);
+  outputRows.push(totRow);
+
+  const compliancePassed = il <= 0.5;
+
+  const interp = `Cell suppression on ${R}×${C} table (rows="${rowCol}", cols="${colCol}", values="${valueCol}" [${aggregate}]). ` +
+    `Primary: ${primaryCount} cells (n<${nMin} rule + ${pPct}% dominance). ` +
+    `Secondary: ${secondaryCount} additional cells. Total suppressed: ${suppressed.size}/${R*C} (${(il*100).toFixed(1)}% IL).`;
+
+  const warnings: string[] = [
+    ...(il > 0.5 ? ["Over 50% of cells suppressed. Loosen n_min or dominance threshold."] : []),
+    ...(primaryCount === 0 ? ["No cells triggered primary suppression under current rules."] : []),
+    ...(R < 2 || C < 2 ? ["Table is too small — choose columns with more distinct categories."] : []),
+  ];
+
+  const now = new Date().toLocaleString("en-IN");
+  const report = buildReport(
+    "Cell Suppression", "dataset", now, N, outputRows.length,
+    htmlRow("Row Column", rowCol) + htmlRow("Column Column", colCol) +
+    htmlRow("Value / Aggregate", `${valueCol} (${aggregate})`) +
+    htmlRow("Min Frequency (n)", nMin) +
+    htmlRow("Dominance Rule (p%)", `${pPct}% top-${kDominance} contributor(s)`) +
+    htmlRow("Secondary Suppression", applySecondary ? "YES" : "NO"),
+    htmlRow("Table Dimensions", `${R} × ${C}`) +
+    htmlRow("Primary Suppressed", primaryCount) +
+    htmlRow("Secondary Suppressed", secondaryCount) +
+    htmlRow("Total Suppressed", `${suppressed.size} / ${R*C}`) +
+    htmlRow("Cell IL", `${(il*100).toFixed(2)}%`, il < 0.3),
+    "", interp, warnings,
+  );
+
+  return {
+    technique: "Cell Suppression (Statistical Table)", family: "SDC",
+    processedData: outputRows, originalCount: N, processedCount: outputRows.length,
+    recordsSuppressed: 0,
+    informationLoss: Math.min(1, il),
+    executionMs: Math.round(performance.now() - t0),
+    stats: {
+      tableSize:            `${R} × ${C}`,
+      aggregate,
+      primarySuppressed:    primaryCount,
+      secondarySuppressed:  secondaryCount,
+      totalCellsSuppressed: suppressed.size,
+      totalCells:           R * C,
+      cellSuppressionRate:  `${(il*100).toFixed(1)}%`,
+    },
+    warnings, interpretation: interp, compliancePassed, report,
+  };
+}

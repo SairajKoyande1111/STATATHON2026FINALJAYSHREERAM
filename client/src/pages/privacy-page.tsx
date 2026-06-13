@@ -24,7 +24,8 @@ import type { Dataset, PrivacyOperation } from "@shared/schema";
 import type { DataRow } from "@/lib/attacks/utils";
 import type { PrivacyResult } from "@/lib/privacy/types";
 import { downloadCSV } from "@/lib/privacy/types";
-import { applyKAnonymity, applyLDiversity, applyTCloseness, applyRankSwapping, applyMicroaggregation, applyPRAM, applyTopBottomCoding } from "@/lib/privacy/sdc";
+import { applyKAnonymity, applyLDiversity, applyTCloseness, applyRankSwapping, applyMicroaggregation, applyPRAM, applyTopBottomCoding, applyNoiseAddition, applyExplicitSuppression, applyGeneralisation, applyDataShuffling, applyCellSuppression } from "@/lib/privacy/sdc";
+import type { GeneralisationColConfig } from "@/lib/privacy/sdc";
 import { applyLaplace, applyGaussian, applyExponential } from "@/lib/privacy/dp";
 import { applyStatisticalSDG, applyDPSDG } from "@/lib/privacy/synthetic";
 import { applyHomomorphicEncryption, applySMPC } from "@/lib/privacy/crypto";
@@ -44,13 +45,18 @@ const FAMILIES = [
 type FamilyId = typeof FAMILIES[number]["id"];
 
 const SDC_TECHNIQUES = [
-  { id: "k-anonymity",    label: "K-Anonymity",        subtitle: "Mondrian Greedy Partitioning",  needsQI: true,  needsSA: false },
-  { id: "l-diversity",    label: "L-Diversity",        subtitle: "Entropy / Distinct / Recursive", needsQI: true,  needsSA: true  },
-  { id: "t-closeness",    label: "T-Closeness",        subtitle: "Earth Mover's Distance (EMD)",  needsQI: true,  needsSA: true  },
-  { id: "rank-swapping",  label: "Rank Swapping",      subtitle: "Rank-bounded value exchange",   needsQI: false, needsSA: false },
-  { id: "microagg",       label: "Microaggregation",   subtitle: "MDAV centroid replacement",     needsQI: false, needsSA: false },
-  { id: "pram",           label: "PRAM",               subtitle: "Post Randomisation Method",     needsQI: false, needsSA: false },
-  { id: "topbottom",      label: "Top/Bottom Coding",  subtitle: "Percentile capping + noise",    needsQI: false, needsSA: false },
+  { id: "k-anonymity",         label: "K-Anonymity",           subtitle: "Mondrian Greedy Partitioning",   needsQI: true,  needsSA: false },
+  { id: "l-diversity",         label: "L-Diversity",           subtitle: "Entropy / Distinct / Recursive", needsQI: true,  needsSA: true  },
+  { id: "t-closeness",         label: "T-Closeness",           subtitle: "Earth Mover's Distance (EMD)",   needsQI: true,  needsSA: true  },
+  { id: "rank-swapping",       label: "Rank Swapping",         subtitle: "Rank-bounded value exchange",    needsQI: false, needsSA: false },
+  { id: "microagg",            label: "Microaggregation",      subtitle: "MDAV centroid replacement",      needsQI: false, needsSA: false },
+  { id: "pram",                label: "PRAM",                  subtitle: "Post Randomisation Method",      needsQI: false, needsSA: false },
+  { id: "topbottom",           label: "Top/Bottom Coding",     subtitle: "Percentile capping + noise",     needsQI: false, needsSA: false },
+  { id: "noise-addition",      label: "Noise Addition",        subtitle: "Gaussian / Laplace / Uniform",   needsQI: false, needsSA: false },
+  { id: "explicit-suppression",label: "Explicit Suppression",  subtitle: "Row / cell / threshold rules",   needsQI: false, needsSA: false },
+  { id: "generalisation",      label: "Generalisation",        subtitle: "Bin / Round / Top-K per column", needsQI: false, needsSA: false },
+  { id: "data-shuffling",      label: "Data Shuffling",        subtitle: "Full / Within-group / Rank",     needsQI: false, needsSA: false },
+  { id: "cell-suppression",    label: "Cell Suppression",      subtitle: "Statistical table protection",   needsQI: false, needsSA: false },
 ];
 const DP_TECHNIQUES = [
   { id: "laplace",     label: "Laplace Mechanism",    subtitle: "ε-DP on numeric queries" },
@@ -85,7 +91,12 @@ const FORMULAS: Record<string, { title: string; latex: string; desc: string }> =
   "dp-sdg":        { title: "DP-SDG (DP-SGD Gradient Clipping)", latex: "g̃ = (1/B) Σ [gt/max(1,‖gt‖/C)] + N(0,σ²C²I)", desc: "Gradients are clipped to norm C and Gaussian noise N(0,σ²C²I) is injected. σ ≥ C·√(2ln(1.25/δ))/ε gives (ε,δ)-DP on the generated model." },
   "he":            { title: "Paillier Homomorphic Encryption", latex: "E(m₁) · E(m₂) ≡ E(m₁ + m₂) (mod n²)", desc: "Additive partially-homomorphic encryption. Computations on ciphertexts equal encryption of the computed result — data is never decrypted at the analyst." },
   "smpc":          { title: "Additive Secret Sharing (Shamir)", latex: "s₁ + s₂ + … + sₖ ≡ v (mod P)  ∀P prime", desc: "Each value is split into k additive shares over a prime field. Any individual share is information-theoretically random. Threshold t shares reconstruct the original." },
-  "fedavg":        { title: "Federated Averaging (FedAvg)", latex: "w_{t+1} = Σₖ (nₖ/n) · wₖₜ", desc: "Each node trains locally on its shard and sends only model updates (gradients). FedAvg computes the weighted average of local model weights across K nodes." },
+  "fedavg":             { title: "Federated Averaging (FedAvg)", latex: "w_{t+1} = Σₖ (nₖ/n) · wₖₜ", desc: "Each node trains locally on its shard and sends only model updates (gradients). FedAvg computes the weighted average of local model weights across K nodes." },
+  "noise-addition":     { title: "Noise Addition", latex: "x′ = x + ε,  ε ~ D(0, λ·σ_col)",  desc: "Noise proportional to each column's standard deviation is injected. λ controls the noise-to-signal ratio. Distributions: Gaussian N(0,σ²), Laplace Lap(0,b), Uniform U(−δ,+δ)." },
+  "explicit-suppression": { title: "Explicit Suppression", latex: "Suppress record rᵢ if criterion(rᵢ) = TRUE", desc: "Records or cells are removed based on disclosure-risk criteria: uniqueness (|EC| < k), outlier (|z| > z₀), sensitive-value membership, or threshold violation." },
+  "generalisation":     { title: "Generalisation (Bin / Round / Top-K)", latex: "x → ⌊x/w⌋·w  (round);  x → [lo, lo+w)  (bin);  v → 'Other' if rank > K  (top-k)", desc: "Values are replaced by less specific representations. Binning groups numeric values into intervals; rounding reduces precision; Top-K maps rare categories to 'Other'." },
+  "data-shuffling":     { title: "Data Shuffling", latex: "π: {1…N} → {1…N}  (permutation  of target column values)", desc: "Column values are permuted independently of other columns to sever quasi-identifier ↔ sensitive-attribute linkages. Marginal distributions are exactly preserved." },
+  "cell-suppression":   { title: "Cell Suppression (n-rule + p%-dominance)", latex: "Suppress cell(r,c) if count < n  OR  Σᵢ₌₁ᵏ xᵢ / Σⱼ xⱼ > p/100", desc: "Primary cells are suppressed if they fail the minimum-frequency rule or if the top-k contributors dominate. Secondary suppression prevents back-calculation from marginals." },
 };
 
 // ─── Result summary component ─────────────────────────────────────────────────
@@ -394,6 +405,41 @@ export default function PrivacyPage() {
   const [addNoise,        setAddNoise]        = useState(false);
   const [noiseLevel,      setNoiseLevel]      = useState([0.1]);
 
+  // ── Noise Addition parameters ──────────────────────────────────────────────
+  const [noiseDist,     setNoiseDist]     = useState<"gaussian"|"laplace"|"uniform">("gaussian");
+  const [noiseLambda,   setNoiseLambda]   = useState([0.1]);
+  const [noiseClip,     setNoiseClip]     = useState(true);
+
+  // ── Explicit Suppression parameters ────────────────────────────────────────
+  const [suppMode,      setSuppMode]      = useState<"row"|"cell"|"both">("row");
+  const [suppCriterion, setSuppCriterion] = useState<"uniqueness"|"outlier"|"sensitive_value"|"threshold">("uniqueness");
+  const [suppBudget,    setSuppBudget]    = useState([10]);   // % of N
+  const [suppMinGroup,  setSuppMinGroup]  = useState([2]);
+  const [suppZThreshold,setSuppZThreshold]= useState([3.0]);
+  const [suppSACol,     setSuppSACol]     = useState("");
+  const [suppRiskVals,  setSuppRiskVals]  = useState("");     // comma-separated
+  const [suppLower,     setSuppLower]     = useState("");
+  const [suppUpper,     setSuppUpper]     = useState("");
+  const [suppMinCellFreq,setSuppMinCellFreq] = useState([3]);
+
+  // ── Generalisation parameters ──────────────────────────────────────────────
+  const [genColConfigs, setGenColConfigs] = useState<GeneralisationColConfig[]>([]);
+
+  // ── Data Shuffling parameters ──────────────────────────────────────────────
+  const [shuffleVariant, setShuffleVariant] = useState<"full"|"within_group"|"rank_preserving">("full");
+  const [shuffleGroupCol,setShuffleGroupCol]= useState("");
+  const [shuffleRankDelta,setShuffleRankDelta]= useState([0.1]);
+
+  // ── Cell Suppression parameters ────────────────────────────────────────────
+  const [csRowCol,       setCsRowCol]       = useState("");
+  const [csColCol,       setCsColCol]       = useState("");
+  const [csValCol,       setCsValCol]       = useState("");
+  const [csAggregate,    setCsAggregate]    = useState<"count"|"sum"|"mean">("count");
+  const [csNMin,         setCsNMin]         = useState([3]);
+  const [csPPct,         setCsPPct]         = useState([70]);
+  const [csKDom,         setCsKDom]         = useState([2]);
+  const [csSecondary,    setCsSecondary]    = useState(true);
+
   // ── DP parameters ──────────────────────────────────────────────────────────
   const [epsilon,    setEpsilon]    = useState([1.0]);
   const [delta,      setDelta]      = useState([1e-5]);
@@ -487,6 +533,45 @@ export default function PrivacyPage() {
           case "topbottom":
             res = applyTopBottomCoding(rawData, cols, topPct[0], botPct[0], addNoise, noiseLevel[0]);
             break;
+          case "noise-addition":
+            res = applyNoiseAddition(rawData, cols, noiseDist, noiseLambda[0], noiseClip);
+            break;
+          case "explicit-suppression":
+            res = applyExplicitSuppression(
+              rawData, suppMode, suppCriterion,
+              {
+                qiCols: quasiIdentifiers,
+                minGroupSize: suppMinGroup[0],
+                zThreshold: suppZThreshold[0],
+                targetCols: targetCols.length > 0 ? targetCols : allCols,
+                saCol: suppSACol,
+                riskValues: suppRiskVals.split(",").map((s) => s.trim()).filter(Boolean),
+                lowerBound: suppLower !== "" ? parseFloat(suppLower) : undefined,
+                upperBound: suppUpper !== "" ? parseFloat(suppUpper) : undefined,
+                minCellFrequency: suppMinCellFreq[0],
+              },
+              suppBudget[0] / 100,
+            );
+            break;
+          case "generalisation":
+            if (genColConfigs.length === 0) {
+              toast({ title: "No columns configured", description: "Add at least one column configuration for Generalisation.", variant: "destructive" });
+              setRunning(false);
+              return;
+            }
+            res = applyGeneralisation(rawData, genColConfigs);
+            break;
+          case "data-shuffling":
+            res = applyDataShuffling(rawData, cols, shuffleVariant, shuffleGroupCol || null, shuffleRankDelta[0]);
+            break;
+          case "cell-suppression":
+            if (!csRowCol || !csColCol || !csValCol) {
+              toast({ title: "Missing columns", description: "Select Row, Column, and Value columns for Cell Suppression.", variant: "destructive" });
+              setRunning(false);
+              return;
+            }
+            res = applyCellSuppression(rawData, csRowCol, csColCol, csValCol, csAggregate, csNMin[0], csPPct[0], csKDom[0], csSecondary);
+            break;
           default:
             throw new Error("Unknown SDC technique");
         }
@@ -556,7 +641,7 @@ export default function PrivacyPage() {
     } finally {
       setRunning(false);
     }
-  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, allCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, epsilon, delta, synthSize, preserveCorr, dpSgdClip, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, selectedDataset, toast]);
+  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, allCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, noiseDist, noiseLambda, noiseClip, suppMode, suppCriterion, suppBudget, suppMinGroup, suppZThreshold, suppSACol, suppRiskVals, suppLower, suppUpper, suppMinCellFreq, genColConfigs, shuffleVariant, shuffleGroupCol, shuffleRankDelta, csRowCol, csColCol, csValCol, csAggregate, csNMin, csPPct, csKDom, csSecondary, epsilon, delta, synthSize, preserveCorr, dpSgdClip, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, selectedDataset, toast]);
 
   // ─── Shared column pickers ─────────────────────────────────────────────────
   const activeTechId =
@@ -568,7 +653,7 @@ export default function PrivacyPage() {
 
   const techniqueNeedsQI = SDC_TECHNIQUES.find((t) => t.id === activeTechId)?.needsQI ?? false;
   const techniqueNeedsSA = SDC_TECHNIQUES.find((t) => t.id === activeTechId)?.needsSA ?? false;
-  const techniqueNeedsTarget = ["rank-swapping", "microagg", "pram", "topbottom"].includes(activeTechId)
+  const techniqueNeedsTarget = ["rank-swapping", "microagg", "pram", "topbottom", "noise-addition", "explicit-suppression", "data-shuffling"].includes(activeTechId)
     || family === "dp" || (family === "synthetic" && sdgTech === "dp-sdg")
     || (family === "synthetic" && sdgTech === "stat-sdg");
 
@@ -672,7 +757,7 @@ export default function PrivacyPage() {
                 )}
 
                 {/* For SDC techniques needing target cols */}
-                {(family === "sdc" && ["rank-swapping","microagg","pram","topbottom"].includes(sdcTech)) && (
+                {(family === "sdc" && ["rank-swapping","microagg","pram","topbottom","noise-addition","explicit-suppression","data-shuffling"].includes(sdcTech)) && (
                   <div className="space-y-2">
                     <Label className="text-xs font-semibold uppercase tracking-wide">
                       Target Columns <span className="font-normal text-muted-foreground">(all = none selected)</span>
@@ -851,6 +936,223 @@ export default function PrivacyPage() {
                         {addNoise && (
                           <SliderField label="Noise Level (λ)" value={noiseLevel} onChange={setNoiseLevel} min={0.01} max={0.5} step={0.01} format={(v) => v.toFixed(2)} helpText={`σ_noise = ${noiseLevel[0].toFixed(2)} × column_std`} />
                         )}
+                      </>)}
+
+                      {/* ── Noise Addition ── */}
+                      {sdcTech === "noise-addition" && (<>
+                        <div className="space-y-2">
+                          <Label className="text-sm">Noise Distribution</Label>
+                          <RadioGroup value={noiseDist} onValueChange={(v) => setNoiseDist(v as typeof noiseDist)} className="space-y-1">
+                            {([["gaussian","Gaussian  N(0, σ²)  — smooth symmetric"],["laplace","Laplace  Lap(0, b)  — heavier tails, stronger DP"],["uniform","Uniform  U(−δ, +δ)  — bounded support"]] as [string,string][]).map(([v, label]) => (
+                              <div key={v} className="flex items-center gap-2">
+                                <RadioGroupItem value={v} id={`nd-${v}`} />
+                                <label htmlFor={`nd-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                        <SliderField label="Noise Multiplier (λ)" value={noiseLambda} onChange={setNoiseLambda} min={0.01} max={1.0} step={0.01} format={(v) => v.toFixed(2)} helpText={`σ_noise = λ × col_std = ${noiseLambda[0].toFixed(2)} × σ_col. Lower = more utility.`} />
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="text-sm">Clip to Column Range</Label>
+                            <p className="text-xs text-muted-foreground">Clamp noisy values to [min, max] of original column</p>
+                          </div>
+                          <Switch checked={noiseClip} onCheckedChange={setNoiseClip} />
+                        </div>
+                        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                          <p className="font-semibold text-foreground">Compliance thresholds</p>
+                          <p>Avg Pearson r ≥ 0.85 and λ ≤ 0.5. SNR = σ²_col / σ²_noise = 1/λ²</p>
+                        </div>
+                      </>)}
+
+                      {/* ── Explicit Suppression ── */}
+                      {sdcTech === "explicit-suppression" && (<>
+                        <div className="space-y-2">
+                          <Label className="text-sm">Suppression Mode</Label>
+                          <RadioGroup value={suppMode} onValueChange={(v) => setSuppMode(v as typeof suppMode)} className="flex gap-4">
+                            {([["row","Row"],["cell","Cell"],["both","Both"]] as [string,string][]).map(([v, label]) => (
+                              <div key={v} className="flex items-center gap-2">
+                                <RadioGroupItem value={v} id={`sm-${v}`} />
+                                <label htmlFor={`sm-${v}`} className="text-xs cursor-pointer">{label}</label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm">Suppression Criterion</Label>
+                          <RadioGroup value={suppCriterion} onValueChange={(v) => setSuppCriterion(v as typeof suppCriterion)} className="space-y-1">
+                            {([
+                              ["uniqueness","Uniqueness  — suppress if QI group size < min"],
+                              ["outlier","Outlier  — suppress if |z-score| > threshold"],
+                              ["sensitive_value","Sensitive Value  — suppress if SA ∈ risk list"],
+                              ["threshold","Threshold  — suppress if numeric value out of bounds"],
+                            ] as [string,string][]).map(([v, label]) => (
+                              <div key={v} className="flex items-center gap-2">
+                                <RadioGroupItem value={v} id={`sc-${v}`} />
+                                <label htmlFor={`sc-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                        <SliderField label="Suppression Budget" value={suppBudget} onChange={setSuppBudget} min={1} max={50} step={1} format={(v) => `${v}%`} helpText={`Max ${suppBudget[0]}% of records may be suppressed. Excess candidates are dropped.`} />
+
+                        {suppCriterion === "uniqueness" && (
+                          <SliderField label="Min Group Size" value={suppMinGroup} onChange={setSuppMinGroup} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Suppress records whose QI group has < ${suppMinGroup[0]} members`} />
+                        )}
+                        {suppCriterion === "outlier" && (
+                          <SliderField label="Z-Score Threshold" value={suppZThreshold} onChange={setSuppZThreshold} min={1.0} max={5.0} step={0.1} format={(v) => v.toFixed(1)} helpText={`Suppress records with |z| > ${suppZThreshold[0].toFixed(1)} in any target column`} />
+                        )}
+                        {suppCriterion === "sensitive_value" && (
+                          <div className="space-y-2">
+                            <Label className="text-sm">Sensitive Attribute Column</Label>
+                            <Select value={suppSACol} onValueChange={setSuppSACol}>
+                              <SelectTrigger data-testid="select-supp-sa-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                              <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                            </Select>
+                            <Label className="text-sm">Risk Values (comma-separated)</Label>
+                            <input
+                              className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono"
+                              placeholder="e.g. HIV, Cancer, Fraud"
+                              value={suppRiskVals}
+                              onChange={(e) => setSuppRiskVals(e.target.value)}
+                              data-testid="input-risk-values"
+                            />
+                          </div>
+                        )}
+                        {suppCriterion === "threshold" && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Lower Bound</Label>
+                              <input className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono" type="number" placeholder="−∞" value={suppLower} onChange={(e) => setSuppLower(e.target.value)} data-testid="input-supp-lower" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Upper Bound</Label>
+                              <input className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono" type="number" placeholder="+∞" value={suppUpper} onChange={(e) => setSuppUpper(e.target.value)} data-testid="input-supp-upper" />
+                            </div>
+                          </div>
+                        )}
+                        {(suppMode === "cell" || suppMode === "both") && (
+                          <SliderField label="Min Cell Frequency" value={suppMinCellFreq} onChange={setSuppMinCellFreq} min={1} max={20} step={1} format={(v) => String(v)} helpText={`Cells with fewer than ${suppMinCellFreq[0]} occurrences are replaced with "***"`} />
+                        )}
+                      </>)}
+
+                      {/* ── Generalisation ── */}
+                      {sdcTech === "generalisation" && (<>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm">Column Configurations</Label>
+                            <Badge variant="outline" className="text-xs">{genColConfigs.length} configured</Badge>
+                          </div>
+                          {genColConfigs.length === 0 && (
+                            <p className="text-xs text-muted-foreground italic">Add columns below to generalise them.</p>
+                          )}
+                          {genColConfigs.map((cfg, idx) => (
+                            <div key={idx} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+                              <div className="flex-1 min-w-0 text-xs">
+                                <span className="font-medium">{cfg.col}</span>
+                                <span className="text-muted-foreground ml-2">
+                                  {cfg.type === "bin"   ? `bin  bw=${cfg.binWidth ?? "auto"}` :
+                                   cfg.type === "round" ? `round  rt=${cfg.roundTo ?? 10}` :
+                                   `top-k  k=${cfg.topK ?? 10}`}
+                                </span>
+                              </div>
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-rose-500 hover:text-rose-700"
+                                onClick={() => setGenColConfigs((p) => p.filter((_, i) => i !== idx))}
+                                data-testid={`button-remove-gen-col-${idx}`}>✕</Button>
+                            </div>
+                          ))}
+                          <AddGenColRow
+                            allCols={allCols}
+                            existing={genColConfigs.map((c) => c.col)}
+                            onAdd={(cfg) => setGenColConfigs((p) => [...p, cfg])}
+                          />
+                        </div>
+                      </>)}
+
+                      {/* ── Data Shuffling ── */}
+                      {sdcTech === "data-shuffling" && (<>
+                        <div className="space-y-2">
+                          <Label className="text-sm">Shuffle Variant</Label>
+                          <RadioGroup value={shuffleVariant} onValueChange={(v) => setShuffleVariant(v as typeof shuffleVariant)} className="space-y-1">
+                            {([
+                              ["full","Full Shuffle  — completely random permutation"],
+                              ["within_group","Within-Group  — shuffle only within each group"],
+                              ["rank_preserving","Rank-Preserving  — limit displacement by δ × N"],
+                            ] as [string,string][]).map(([v, label]) => (
+                              <div key={v} className="flex items-center gap-2">
+                                <RadioGroupItem value={v} id={`sv-${v}`} />
+                                <label htmlFor={`sv-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                        {shuffleVariant === "within_group" && (
+                          <div className="space-y-2">
+                            <Label className="text-sm">Group Column</Label>
+                            <Select value={shuffleGroupCol} onValueChange={setShuffleGroupCol}>
+                              <SelectTrigger data-testid="select-shuffle-group-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">None (full shuffle)</SelectItem>
+                                {allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        {shuffleVariant === "rank_preserving" && (
+                          <SliderField label="Rank Delta (δ)" value={shuffleRankDelta} onChange={setShuffleRankDelta} min={0.01} max={0.5} step={0.01} format={(v) => v.toFixed(2)} helpText={`Max rank displacement = δ×N = ${Math.round(shuffleRankDelta[0] * (rawData.length || 100))} positions. Smaller = more order preserved.`} />
+                        )}
+                        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                          <p className="font-semibold text-foreground">Privacy guarantee</p>
+                          <p>All marginal distributions are exactly preserved. QI↔SA linkage is broken. Select target columns on the left (all = none selected).</p>
+                        </div>
+                      </>)}
+
+                      {/* ── Cell Suppression ── */}
+                      {sdcTech === "cell-suppression" && (<>
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="space-y-2">
+                            <Label className="text-sm">Row Variable (table rows)</Label>
+                            <Select value={csRowCol} onValueChange={setCsRowCol}>
+                              <SelectTrigger data-testid="select-cs-row-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                              <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm">Column Variable (table columns)</Label>
+                            <Select value={csColCol} onValueChange={setCsColCol}>
+                              <SelectTrigger data-testid="select-cs-col-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                              <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm">Value Column</Label>
+                            <Select value={csValCol} onValueChange={setCsValCol}>
+                              <SelectTrigger data-testid="select-cs-val-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                              <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm">Aggregation Function</Label>
+                          <RadioGroup value={csAggregate} onValueChange={(v) => setCsAggregate(v as typeof csAggregate)} className="flex gap-4">
+                            {([["count","Count"],["sum","Sum"],["mean","Mean"]] as [string,string][]).map(([v, label]) => (
+                              <div key={v} className="flex items-center gap-2">
+                                <RadioGroupItem value={v} id={`ca-${v}`} />
+                                <label htmlFor={`ca-${v}`} className="text-xs cursor-pointer">{label}</label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                        <SliderField label="Min Frequency (n)" value={csNMin} onChange={setCsNMin} min={1} max={20} step={1} format={(v) => String(v)} helpText={`Cells with count < ${csNMin[0]} are suppressed (n-rule)`} />
+                        <SliderField label="Dominance Threshold (p%)" value={csPPct} onChange={setCsPPct} min={50} max={99} step={1} format={(v) => `${v}%`} helpText={`If top-${csKDom[0]} contributors > ${csPPct[0]}% of cell total, suppress`} />
+                        <SliderField label="Top-k Dominance (k)" value={csKDom} onChange={setCsKDom} min={1} max={5} step={1} format={(v) => String(v)} helpText="Number of top contributors to test for dominance" />
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="text-sm">Secondary Suppression</Label>
+                            <p className="text-xs text-muted-foreground">Prevent back-calculation from row/column marginals</p>
+                          </div>
+                          <Switch checked={csSecondary} onCheckedChange={setCsSecondary} />
+                        </div>
                       </>)}
 
                       <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
@@ -1204,5 +1506,87 @@ function RunButton({ running, onRun, disabled }: { running: boolean; onRun: () =
         <><Play className="mr-2 h-4 w-4" />Apply Technique</>
       )}
     </Button>
+  );
+}
+
+// ─── Helper: Add Generalisation column row ────────────────────────────────────
+function AddGenColRow({
+  allCols, existing, onAdd,
+}: {
+  allCols: string[];
+  existing: string[];
+  onAdd: (cfg: GeneralisationColConfig) => void;
+}) {
+  const [col,      setCol]      = useState("");
+  const [type,     setType]     = useState<"bin"|"round"|"topk">("bin");
+  const [binWidth, setBinWidth] = useState("");
+  const [roundTo,  setRoundTo]  = useState("");
+  const [topK,     setTopK]     = useState("10");
+
+  const available = allCols.filter((c) => !existing.includes(c));
+
+  function handleAdd() {
+    if (!col) return;
+    const cfg: GeneralisationColConfig = { col, type };
+    if (type === "bin"   && binWidth) cfg.binWidth = parseFloat(binWidth);
+    if (type === "round" && roundTo)  cfg.roundTo  = parseFloat(roundTo);
+    if (type === "topk"  && topK)     cfg.topK     = parseInt(topK);
+    onAdd(cfg);
+    setCol("");
+  }
+
+  if (available.length === 0) {
+    return <p className="text-xs text-muted-foreground italic">All columns already configured.</p>;
+  }
+
+  return (
+    <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Add Column</p>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Column</Label>
+          <Select value={col} onValueChange={setCol}>
+            <SelectTrigger className="h-7 text-xs" data-testid="select-gen-col">
+              <SelectValue placeholder="Select…" />
+            </SelectTrigger>
+            <SelectContent>{available.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Type</Label>
+          <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
+            <SelectTrigger className="h-7 text-xs" data-testid="select-gen-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bin">Bin (numeric)</SelectItem>
+              <SelectItem value="round">Round (numeric)</SelectItem>
+              <SelectItem value="topk">Top-K (categorical)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {type === "bin" && (
+        <div className="space-y-1">
+          <Label className="text-xs">Bin Width (blank = auto)</Label>
+          <input className="w-full rounded-md border bg-background px-3 py-1 text-xs font-mono" type="number" min="0.001" step="any" placeholder="auto (Sturges rule)" value={binWidth} onChange={(e) => setBinWidth(e.target.value)} data-testid="input-gen-bin-width" />
+        </div>
+      )}
+      {type === "round" && (
+        <div className="space-y-1">
+          <Label className="text-xs">Round To (nearest)</Label>
+          <input className="w-full rounded-md border bg-background px-3 py-1 text-xs font-mono" type="number" min="1" step="any" placeholder="10" value={roundTo} onChange={(e) => setRoundTo(e.target.value)} data-testid="input-gen-round-to" />
+        </div>
+      )}
+      {type === "topk" && (
+        <div className="space-y-1">
+          <Label className="text-xs">Top-K (keep most frequent K values)</Label>
+          <input className="w-full rounded-md border bg-background px-3 py-1 text-xs font-mono" type="number" min="1" step="1" placeholder="10" value={topK} onChange={(e) => setTopK(e.target.value)} data-testid="input-gen-top-k" />
+        </div>
+      )}
+      <Button size="sm" className="w-full h-7 text-xs" onClick={handleAdd} disabled={!col} data-testid="button-add-gen-col">
+        + Add Column
+      </Button>
+    </div>
   );
 }
