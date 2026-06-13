@@ -646,6 +646,8 @@ export default function PrivacyPage() {
   const [dpPostClamp,       setDpPostClamp]       = useState(true);
   const [dpSeedEnabled,     setDpSeedEnabled]     = useState(false);
   const [dpSeed,            setDpSeed]            = useState(42);
+  const [dpBudgetMode,      setDpBudgetMode]      = useState<"global"|"equal"|"proportional">("global");
+  const [dpCompositionMode, setDpCompositionMode] = useState<"basic"|"advanced"|"renyi">("advanced");
 
   // ── SDG parameters ─────────────────────────────────────────────────────────
   const [synthSize,    setSynthSize]    = useState([100]);
@@ -703,6 +705,35 @@ export default function PrivacyPage() {
     }
     return profiles;
   }, [rawData, allCols]);
+
+  // ── DP Column Preview — per-column Δf, noise scale, risk color ───────────────
+  const dpColumnPreview = useMemo(() => {
+    if (rawData.length === 0 || allCols.length === 0) return { numCols: [] as { col: string; sensitivity: number; noiseScale: number; meanVal: number; ratio: number; risk: "high"|"med"|"low" }[], catCols: [] as { col: string; uniqueCount: number; entropy: number }[] };
+    const eps = epsilon[0];
+    const numCols = allCols.filter((c) => colProfiles[c]?.isNum).map((c) => {
+      const vals = rawData.map((r) => { const n = Number(r[c]); return isNaN(n) ? null : n; }).filter((v): v is number => v !== null);
+      if (vals.length === 0) return { col: c, sensitivity: 0, noiseScale: 0, meanVal: 0, ratio: 0, risk: "low" as const };
+      const sorted = [...vals].sort((a, b) => a - b);
+      const n = sorted.length;
+      let lo: number, hi: number;
+      if (dpSensitivityMode === "iqr") {
+        const q1 = sorted[Math.floor(n * 0.25)]; const q3 = sorted[Math.floor(n * 0.75)];
+        const iqr = q3 - q1; lo = q1 - 1.5 * iqr; hi = q3 + 1.5 * iqr;
+      } else if (dpSensitivityMode === "percentile") {
+        lo = sorted[Math.max(0, Math.floor(n * 0.01))]; hi = sorted[Math.min(n - 1, Math.floor(n * 0.99))];
+      } else { lo = sorted[0]; hi = sorted[n - 1]; }
+      const sensitivity = Math.max(hi - lo, 1e-9);
+      const noiseScale = sensitivity / Math.max(eps, 0.01);
+      const meanVal = vals.reduce((s, v) => s + v, 0) / vals.length;
+      const ratio = Math.abs(meanVal) > 1e-9 ? noiseScale / Math.abs(meanVal) : (noiseScale > 0 ? Infinity : 0);
+      const risk: "high"|"med"|"low" = ratio > 10 ? "high" : ratio > 1 ? "med" : "low";
+      return { col: c, sensitivity, noiseScale, meanVal, ratio, risk };
+    });
+    const catCols = allCols.filter((c) => !colProfiles[c]?.isNum).map((c) => ({
+      col: c, uniqueCount: colProfiles[c]?.uniqueCount ?? 0, entropy: colProfiles[c]?.entropy ?? 0,
+    }));
+    return { numCols, catCols };
+  }, [rawData, allCols, colProfiles, dpSensitivityMode, epsilon]);
 
   // ── Auto-assist effect — runs when technique or data changes ────────────────
   useEffect(() => {
@@ -1440,17 +1471,17 @@ export default function PrivacyPage() {
                             ))}
                           </RadioGroup>
                           {/* Issue 9: show note when SA is categorical — EMD≡TVD, toggle is inert */}
-                          {sensitiveAttr && colProfiles[sensitiveAttr]?.classification !== "NUMERIC" && (
+                          {sensitiveAttr && !colProfiles[sensitiveAttr]?.isNum && (
                             <p className="text-xs text-amber-600 dark:text-amber-400 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-1 leading-snug">
                               ℹ️ <strong>SA "{sensitiveAttr}" is categorical</strong> — for unordered categories, EMD reduces to ½ × L1 = TVD. Both metrics give identical results here. To see EMD vs TVD diverge, choose a numeric/ordinal SA (e.g. Age, Income).
                             </p>
                           )}
-                          {sensitiveAttr && colProfiles[sensitiveAttr]?.classification === "NUMERIC" && tDistMetric === "emd" && (
+                          {sensitiveAttr && colProfiles[sensitiveAttr]?.isNum && tDistMetric === "emd" && (
                             <p className="text-xs text-blue-600 dark:text-blue-400 leading-snug">
                               EMD uses CDF-based distance (sensitive to value ordering).
                             </p>
                           )}
-                          {sensitiveAttr && colProfiles[sensitiveAttr]?.classification === "NUMERIC" && tDistMetric === "tvd" && (
+                          {sensitiveAttr && colProfiles[sensitiveAttr]?.isNum && tDistMetric === "tvd" && (
                             <p className="text-xs text-blue-600 dark:text-blue-400 leading-snug">
                               TVD uses ½ × L1 (no CDF — ignores ordinal structure of numeric SA).
                             </p>
@@ -1754,64 +1785,338 @@ export default function PrivacyPage() {
 
             {/* ══ FAMILY 2: DIFFERENTIAL PRIVACY ═════════════════════════════ */}
             <TabsContent value="dp" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
-                {/* Left: Mechanism selector */}
-                <Card>
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Mechanism</CardTitle></CardHeader>
-                  <CardContent>
-                    <TechList items={DP_TECHNIQUES} selected={dpTech} onSelect={(id) => { setDpTech(id); setResult(null); }} />
-                  </CardContent>
-                </Card>
+              <div className="grid gap-4 md:grid-cols-[290px_1fr] min-w-0">
 
-                {/* Right: Parameter panel */}
-                <div className="space-y-4 min-w-0 overflow-hidden">
+                {/* ── LEFT SIDEBAR ────────────────────────────────────────────── */}
+                <div className="space-y-3 min-w-0">
 
-                  {/* Dataset Overview */}
-                  {rawData.length > 0 && (() => {
-                    const numC = allCols.filter((c) => colProfiles[c]?.isNum).length;
-                    const catC = allCols.length - numC;
-                    const missingPct = rawData.length > 0 && allCols.length > 0
-                      ? (rawData.reduce((s, row) => s + allCols.filter((c) => row[c] == null || String(row[c]).trim() === "").length, 0) / (rawData.length * allCols.length) * 100).toFixed(1)
-                      : "0.0";
-                    return (
-                      <Card className="border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
-                        <CardHeader className="pb-2 pt-3">
-                          <CardTitle className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <Database className="h-3.5 w-3.5" /> Dataset Overview
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="pb-3">
-                          <div className="grid grid-cols-3 gap-2 text-center">
+                  {/* Mechanism selector */}
+                  <Card>
+                    <CardHeader className="pb-2"><CardTitle className="text-sm">Mechanism</CardTitle></CardHeader>
+                    <CardContent>
+                      <TechList items={DP_TECHNIQUES} selected={dpTech} onSelect={(id) => { setDpTech(id); setResult(null); }} />
+                    </CardContent>
+                  </Card>
+
+                  {/* S1: Column Configuration banner */}
+                  <Card className="border-purple-200 dark:border-purple-800">
+                    <CardHeader className="pb-1.5 pt-3">
+                      <CardTitle className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Zap className="h-3 w-3" /> Column Configuration
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${epsilonBadgeClass(epsilon[0])}`}>
+                          ε = {epsilon[0].toFixed(1)}
+                        </span>
+                        <span className="text-[11px] font-medium">{epsilonLabel(epsilon[0])}</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        Sensitivity: {dpSensitivityMode === "auto" ? "Auto (Min-Max)" : dpSensitivityMode === "iqr" ? "IQR-based" : "Percentile 1–99%"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {dpTech === "laplace" ? "Pure ε-DP · no δ required" : dpTech === "gaussian" ? `(ε,δ)-DP · δ = ${delta[0]}` : "ε-DP via frequency sampling"}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  {/* S2: Numeric Columns table */}
+                  {(dpTech === "laplace" || dpTech === "gaussian") && (
+                    <Card>
+                      <CardHeader className="pb-1.5 pt-3">
+                        <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center justify-between">
+                          <span className="flex items-center gap-1.5"><BarChart3 className="h-3 w-3 text-blue-500" /> Numeric Cols (Perturbable)</span>
+                          <span className="text-[10px] font-normal text-muted-foreground normal-case">{dpColumnPreview.numCols.length} cols</span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pb-3 px-3">
+                        {dpColumnPreview.numCols.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground italic">No numeric columns detected. Load a dataset first.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {dpColumnPreview.numCols.map(({ col, sensitivity, noiseScale, risk }) => {
+                              const dot = risk === "high" ? "🔴" : risk === "med" ? "🟡" : "🟢";
+                              const riskLabel = risk === "high" ? "HIGH" : risk === "med" ? "MED" : "LOW";
+                              const fmtNum = (v: number) => v >= 1000 ? v.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : v.toFixed(3);
+                              return (
+                                <div key={col} className="flex items-center gap-1.5 text-[10px] py-0.5 border-b border-border/40 last:border-0">
+                                  <span className="shrink-0">{dot}</span>
+                                  <span className="font-medium w-20 truncate" title={col}>{col}</span>
+                                  <span className="text-muted-foreground flex-1 text-right font-mono" title={`Δf = ${sensitivity}`}>Δf={fmtNum(sensitivity)}</span>
+                                  <span className={`shrink-0 rounded px-1 font-bold text-[9px] ${risk === "high" ? "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300" : risk === "med" ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"}`}>
+                                    {riskLabel}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            <p className="text-[9px] text-muted-foreground mt-1.5">
+                              🔴 noise &gt; 10× mean &nbsp;·&nbsp; 🟡 1–10× &nbsp;·&nbsp; 🟢 &lt; 1×
+                            </p>
+                            {dpColumnPreview.numCols.some((c) => c.risk === "high") && (
+                              <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                                ⚠ High-sensitivity cols detected. Switch to IQR clipping to reduce noise.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* S3: Categorical Columns */}
+                  <Card>
+                    <CardHeader className="pb-1.5 pt-3">
+                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center justify-between">
+                        <span className="flex items-center gap-1.5"><Network className="h-3 w-3 text-violet-500" /> Categorical Cols</span>
+                        <span className="text-[10px] font-normal text-muted-foreground normal-case">{dpColumnPreview.catCols.length} cols</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 px-3">
+                      {dpColumnPreview.catCols.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground italic">No categorical columns detected.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {dpColumnPreview.catCols.slice(0, 8).map(({ col, uniqueCount, entropy }) => (
+                            <div key={col} className="flex items-center gap-1.5 text-[10px] py-0.5 border-b border-border/40 last:border-0">
+                              <span className="font-medium w-20 truncate" title={col}>{col}</span>
+                              <span className="text-muted-foreground flex-1 text-right">{uniqueCount} vals</span>
+                              <span className="font-mono text-violet-600 dark:text-violet-400 shrink-0">{entropy.toFixed(2)}b</span>
+                            </div>
+                          ))}
+                          {dpColumnPreview.catCols.length > 8 && (
+                            <p className="text-[9px] text-muted-foreground">+{dpColumnPreview.catCols.length - 8} more columns</p>
+                          )}
+                          <p className="text-[9px] text-muted-foreground mt-1">Entropy (bits) — lower = more uniform → Exp. Mech. distorts less</p>
+                          {(dpTech === "laplace" || dpTech === "gaussian") && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                              ⚠ {dpColumnPreview.catCols.length} categorical col{dpColumnPreview.catCols.length !== 1 ? "s" : ""} untouched by {dpTech === "laplace" ? "Laplace" : "Gaussian"}.
+                              Switch to <strong>Exponential</strong> to protect these.
+                            </p>
+                          )}
+                          {dpTech === "exponential" && (
+                            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">
+                              ✓ Exponential Mechanism will perturb all {dpColumnPreview.catCols.length} categorical columns.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* S4: Budget Allocator */}
+                  <Card>
+                    <CardHeader className="pb-1.5 pt-3">
+                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                        <Zap className="h-3 w-3 text-purple-500" /> Budget (ε) Allocator
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 space-y-2.5">
+                      {(() => {
+                        const nCols = dpTech === "exponential" ? dpColumnPreview.catCols.length : dpColumnPreview.numCols.length;
+                        const epsilonPerCol = nCols > 0 ? epsilon[0] / nCols : epsilon[0];
+                        const totalBasic = epsilon[0] * nCols;
+                        const spent = dpBudgetMode === "equal" ? epsilon[0] : totalBasic;
+                        const budgetPct = Math.min(100, (spent / Math.max(epsilon[0], 0.01)) * 100);
+                        return (<>
+                          <RadioGroup value={dpBudgetMode} onValueChange={(v) => setDpBudgetMode(v as typeof dpBudgetMode)} className="space-y-1.5">
                             {([
-                              ["Rows", rawData.length],
-                              ["Numeric", numC],
-                              ["Categorical", catC],
-                            ] as [string, number][]).map(([lbl, val]) => (
-                              <div key={lbl} className="rounded bg-white dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 py-1.5">
-                                <div className="text-base font-bold text-purple-700 dark:text-purple-300">{val}</div>
-                                <div className="text-[10px] text-muted-foreground">{lbl}</div>
+                              ["global",       "Global ε",       `Each col uses full ε = ${epsilon[0].toFixed(1)} (total cost = ${totalBasic.toFixed(1)})`],
+                              ["equal",        "Equal split",    `ε per col = ${epsilon[0].toFixed(1)} / ${nCols} = ${epsilonPerCol.toFixed(3)} (tighter per-col)`],
+                              ["proportional", "Proportional",   "Low-sensitivity cols get more ε, high-sensitivity cols get less"],
+                            ] as [typeof dpBudgetMode, string, string][]).map(([val, title, desc]) => (
+                              <div key={val} className="flex items-start gap-1.5">
+                                <RadioGroupItem value={val} id={`dp-budget-${val}`} data-testid={`dp-budget-${val}`} className="mt-0.5 shrink-0" />
+                                <label htmlFor={`dp-budget-${val}`} className="cursor-pointer">
+                                  <span className="text-[11px] font-medium">{title}</span>
+                                  <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
+                                </label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                          {/* Budget meter */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                              <span>Budget: {spent.toFixed(2)} / {epsilon[0].toFixed(1)}</span>
+                              <span>{budgetPct.toFixed(0)}% spent</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${budgetPct > 100 ? "bg-rose-500" : budgetPct > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
+                                style={{ width: `${Math.min(budgetPct, 100)}%` }}
+                              />
+                            </div>
+                            {dpBudgetMode === "global" && nCols > 1 && (
+                              <p className="text-[9px] text-amber-600 dark:text-amber-400">
+                                ⚠ Sequential composition: true cost ≈ {totalBasic.toFixed(1)} (Basic) or ≈{(epsilon[0] * Math.sqrt(2 * nCols * Math.log(1 / 1e-5))).toFixed(2)} (Advanced)
+                              </p>
+                            )}
+                          </div>
+                        </>);
+                      })()}
+                    </CardContent>
+                  </Card>
+
+                  {/* S5: Sensitivity / Clipping Strategy */}
+                  <Card>
+                    <CardHeader className="pb-1.5 pt-3">
+                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                        <BarChart3 className="h-3 w-3 text-blue-500" /> Sensitivity / Clipping
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3">
+                      <RadioGroup value={dpSensitivityMode} onValueChange={(v) => setDpSensitivityMode(v as SensitivityMode)} className="space-y-2">
+                        {([
+                          ["auto",       "Auto (Min–Max)",        "Δf = max − min. Exact but outliers inflate noise."],
+                          ["iqr",        "IQR-based (Robust)",    "Clips to 1.5×IQR. Outlier-resistant, lower noise."],
+                          ["percentile", "Percentile (1%–99%)",  "Δf = P99 − P01. Good balance."],
+                        ] as [SensitivityMode, string, string][]).map(([val, title, desc]) => (
+                          <div key={val} className="flex items-start gap-1.5">
+                            <RadioGroupItem value={val} id={`dp-clip-${val}`} data-testid={`dp-clip-${val}`} className="mt-0.5 shrink-0" />
+                            <label htmlFor={`dp-clip-${val}`} className="cursor-pointer">
+                              <span className="text-[11px] font-medium">{title}</span>
+                              <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
+                            </label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+                      {dpColumnPreview.numCols.some((c) => c.sensitivity > 100000) && (
+                        <p className="mt-2 text-[10px] text-amber-600 dark:text-amber-400">
+                          ⚠ Column range &gt; 100,000 detected. IQR-based clipping strongly recommended.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* S6: Composition Mode */}
+                  <Card>
+                    <CardHeader className="pb-1.5 pt-3">
+                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                        <GitMerge className="h-3 w-3 text-indigo-500" /> Composition Settings
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 space-y-2">
+                      <RadioGroup value={dpCompositionMode} onValueChange={(v) => setDpCompositionMode(v as typeof dpCompositionMode)} className="space-y-1.5">
+                        {([
+                          ["basic",    "Basic (sequential)",   "ε_total = Σεᵢ — simple, conservative"],
+                          ["advanced", "Advanced (moments)",   "Tighter bound via moments accountant"],
+                          ["renyi",    "Rényi DP",             "Tightest — uses Rényi divergence"],
+                        ] as [typeof dpCompositionMode, string, string][]).map(([val, title, desc]) => (
+                          <div key={val} className="flex items-start gap-1.5">
+                            <RadioGroupItem value={val} id={`dp-comp-${val}`} data-testid={`dp-comp-${val}`} className="mt-0.5 shrink-0" />
+                            <label htmlFor={`dp-comp-${val}`} className="cursor-pointer">
+                              <span className="text-[11px] font-medium">{title}</span>
+                              <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
+                            </label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+                      {(() => {
+                        const nCols = dpTech === "exponential" ? dpColumnPreview.catCols.length : dpColumnPreview.numCols.length;
+                        if (nCols === 0) return null;
+                        const basic = epsilon[0] * nCols;
+                        const adv   = epsilon[0] * Math.sqrt(2 * nCols * Math.log(1 / 1e-5));
+                        const renyi = adv * 0.72;
+                        return (
+                          <div className="rounded bg-muted/40 p-2 text-[10px] space-y-0.5">
+                            <div className="flex justify-between"><span className="text-muted-foreground">Basic:</span><span className="font-mono font-semibold">{basic.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Advanced:</span><span className="font-mono font-semibold">≈ {adv.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Rényi:</span><span className="font-mono font-semibold">≈ {renyi.toFixed(2)}</span></div>
+                            <p className="text-[9px] text-muted-foreground pt-0.5">Estimated total ε cost for {nCols} columns</p>
+                          </div>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+
+                  {/* S7: Pre-flight Check */}
+                  <Card>
+                    <CardHeader className="pb-1.5 pt-3">
+                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                        <Zap className="h-3 w-3 text-yellow-500" /> Pre-flight Check
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3">
+                      {rawData.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground italic">Load a dataset to see pre-flight checks.</p>
+                      ) : (() => {
+                        const numC = dpColumnPreview.numCols;
+                        const catC = dpColumnPreview.catCols;
+                        const isLapGau = dpTech === "laplace" || dpTech === "gaussian";
+                        const colsOk = isLapGau ? numC.length > 0 : catC.length > 0;
+                        const epsilonOk = epsilon[0] > 0 && epsilon[0] <= 10;
+                        const highNoiseCols = numC.filter((c) => c.risk === "high");
+                        const highSensCols = numC.filter((c) => c.sensitivity > 100000);
+                        const catUntouched = isLapGau && catC.length > 0;
+                        const deltaOk = dpTech !== "gaussian" || delta[0] > 0;
+                        const checks: { icon: string; text: string; sub?: string; type: "ok"|"warn"|"info" }[] = [
+                          colsOk
+                            ? { icon: "✅", text: `${isLapGau ? numC.length + " numeric" : catC.length + " categorical"} columns available`, type: "ok" }
+                            : { icon: "❌", text: `No ${isLapGau ? "numeric" : "categorical"} columns found`, sub: "Load data or switch mechanism", type: "warn" },
+                          epsilonOk
+                            ? { icon: "✅", text: `ε = ${epsilon[0].toFixed(1)} — ${epsilonLabel(epsilon[0])}`, type: "ok" }
+                            : { icon: "⚠", text: "ε out of valid range (0 < ε ≤ 10)", type: "warn" },
+                          { icon: "✅", text: `Sensitivity: ${dpSensitivityMode === "auto" ? "Auto (Min-Max)" : dpSensitivityMode === "iqr" ? "IQR-based" : "Percentile 1–99%"}`, type: "ok" },
+                          ...(highNoiseCols.length > 0 ? [{ icon: "⚠", text: `High noise: ${highNoiseCols.slice(0, 2).map((c) => c.col).join(", ")}${highNoiseCols.length > 2 ? " +" + (highNoiseCols.length - 2) + " more" : ""}`, sub: "Noise scale > 10× mean. Try IQR clipping.", type: "warn" as const }] : []),
+                          ...(highSensCols.length > 0 ? [{ icon: "⚠", text: `Range > 100K: ${highSensCols.map((c) => c.col).join(", ")}`, sub: "IQR clipping strongly recommended.", type: "warn" as const }] : []),
+                          ...(catUntouched ? [{ icon: "⚠", text: `${catC.length} categorical col${catC.length !== 1 ? "s" : ""} untouched`, sub: "Switch to Exponential Mechanism to protect them.", type: "warn" as const }] : []),
+                          ...(dpTech === "gaussian" ? [
+                            deltaOk
+                              ? { icon: "ℹ", text: `δ = ${delta[0]} for (ε,δ)-DP`, type: "info" as const }
+                              : { icon: "❌", text: "δ must be > 0 for Gaussian", type: "warn" as const },
+                          ] : [{ icon: "ℹ", text: "δ = 0 (pure ε-DP)", sub: "No catastrophic failure probability.", type: "info" as const }]),
+                          { icon: "✅", text: `Dataset: N = ${rawData.length} rows`, sub: `δ ≤ 1/N² = ${(1/(rawData.length*rawData.length)).toExponential(1)} recommended`, type: "ok" },
+                        ];
+                        return (
+                          <div className="space-y-1.5">
+                            {checks.map((c, i) => (
+                              <div key={i} className="flex items-start gap-1.5">
+                                <span className="text-[11px] shrink-0 mt-0.5">{c.icon}</span>
+                                <div>
+                                  <p className={`text-[10px] font-medium leading-tight ${c.type === "warn" ? "text-amber-700 dark:text-amber-400" : c.type === "info" ? "text-blue-600 dark:text-blue-400" : ""}`}>{c.text}</p>
+                                  {c.sub && <p className="text-[9px] text-muted-foreground leading-tight">{c.sub}</p>}
+                                </div>
                               </div>
                             ))}
                           </div>
-                          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                            <span>Total columns: <strong>{allCols.length}</strong></span>
-                            <span>Missing: <strong>{missingPct}%</strong></span>
-                          </div>
-                          {dpTech === "laplace" || dpTech === "gaussian" ? (
-                            <p className="mt-1.5 text-[10px] text-purple-600 dark:text-purple-400">
-                              ✓ Laplace/Gaussian will perturb <strong>{numC}</strong> numeric column{numC !== 1 ? "s" : ""}
-                              {catC > 0 ? ` · ${catC} categorical untouched` : ""}
-                            </p>
-                          ) : (
-                            <p className="mt-1.5 text-[10px] text-purple-600 dark:text-purple-400">
-                              ✓ Exponential will perturb <strong>{catC}</strong> categorical column{catC !== 1 ? "s" : ""}
-                              {numC > 0 ? ` · ${numC} numeric untouched` : ""}
-                            </p>
-                          )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })()}
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+
+                  {/* S8: Reproducibility */}
+                  <Card>
+                    <CardHeader className="pb-1.5 pt-3">
+                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                        <Server className="h-3 w-3 text-slate-500" /> Reproducibility
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-[11px] font-medium">Fixed Random Seed</Label>
+                          <p className="text-[9px] text-muted-foreground">Same seed + ε = identical output every run</p>
+                        </div>
+                        <Switch checked={dpSeedEnabled} onCheckedChange={setDpSeedEnabled} data-testid="dp-seed-toggle" />
+                      </div>
+                      {dpSeedEnabled && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number" value={dpSeed} min={0} max={999999}
+                            onChange={(e) => setDpSeed(Math.max(0, parseInt(e.target.value) || 0))}
+                            data-testid="dp-seed-input"
+                            className="w-24 rounded border border-input bg-background px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          <span className="text-[9px] text-muted-foreground">Required for audit trails</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                </div>{/* end left sidebar */}
+
+                {/* ── RIGHT PANEL ─────────────────────────────────────────────── */}
+                <div className="space-y-4 min-w-0 overflow-hidden">
 
                   {/* Main parameters card */}
                   <Card>
@@ -1828,14 +2133,13 @@ export default function PrivacyPage() {
                       <div className="space-y-2">
                         <SliderField
                           label="Privacy Budget (ε)"
-                          value={epsilon}
-                          onChange={setEpsilon}
+                          value={epsilon} onChange={setEpsilon}
                           min={0.1} max={10} step={0.1}
                           format={(v) => v.toFixed(1)}
                           helpText="Lower ε = stronger privacy, more noise. ε ≤ 1 = strong DP."
                         />
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white ${epsilonBadgeClass(epsilon[0])}`}>
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white ${epsilonBadgeClass(epsilon[0])}`}>
                             ε = {epsilon[0].toFixed(1)} — {epsilonLabel(epsilon[0])}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
@@ -1893,80 +2197,18 @@ export default function PrivacyPage() {
                         </div>
                       )}
 
-                      {/* Sensitivity mode (Laplace + Gaussian only) */}
-                      {(dpTech === "laplace" || dpTech === "gaussian") && (
-                        <div className="space-y-2">
-                          <Label className="text-sm font-semibold">Sensitivity / Clipping Strategy</Label>
-                          <p className="text-[10px] text-muted-foreground">Controls how the column range (Δf) is computed — affects noise scale and outlier robustness.</p>
-                          <RadioGroup
-                            value={dpSensitivityMode}
-                            onValueChange={(v) => setDpSensitivityMode(v as SensitivityMode)}
-                            className="space-y-1.5"
-                          >
-                            {([
-                              ["auto",       "Auto (Min–Max)",          "Δf = max − min. Uses full observed range. Larger noise but no bias."],
-                              ["iqr",        "IQR-based (outlier-robust)", "Clips to [Q1 − 1.5×IQR, Q3 + 1.5×IQR]. Reduces noise for skewed data."],
-                              ["percentile", "Percentile (1%–99%)",    "Clips to 1st–99th percentile. Balanced outlier handling."],
-                            ] as [SensitivityMode, string, string][]).map(([val, title, desc]) => (
-                              <div key={val} className="flex items-start gap-2">
-                                <RadioGroupItem value={val} id={`dp-sens-${val}`} data-testid={`dp-sens-${val}`} className="mt-0.5" />
-                                <label htmlFor={`dp-sens-${val}`} className="cursor-pointer">
-                                  <span className="text-xs font-medium">{title}</span>
-                                  <span className="block text-[10px] text-muted-foreground">{desc}</span>
-                                </label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                      )}
-
-                      {/* Post-clamp toggle (Laplace + Gaussian only) */}
+                      {/* Post-clamp toggle */}
                       {(dpTech === "laplace" || dpTech === "gaussian") && (
                         <div className="flex items-center justify-between rounded-lg border p-3">
                           <div>
                             <Label className="text-sm font-medium">Clamp output to valid range</Label>
                             <p className="text-[10px] text-muted-foreground mt-0.5">
-                              After adding noise, clamp values back to [lo, hi] clipping bounds.
-                              Prevents out-of-range values. Recommended for public release.
+                              Clamp noisy values back to [lo, hi] bounds. Prevents out-of-range output.
                             </p>
                           </div>
-                          <Switch
-                            checked={dpPostClamp}
-                            onCheckedChange={setDpPostClamp}
-                            data-testid="dp-postclamp-toggle"
-                          />
+                          <Switch checked={dpPostClamp} onCheckedChange={setDpPostClamp} data-testid="dp-postclamp-toggle" />
                         </div>
                       )}
-
-                      {/* Seed */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label className="text-sm font-medium">Random Seed (reproducibility)</Label>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
-                              When enabled, the same seed + parameters always produce identical output.
-                            </p>
-                          </div>
-                          <Switch
-                            checked={dpSeedEnabled}
-                            onCheckedChange={setDpSeedEnabled}
-                            data-testid="dp-seed-toggle"
-                          />
-                        </div>
-                        {dpSeedEnabled && (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              value={dpSeed}
-                              min={0} max={999999}
-                              onChange={(e) => setDpSeed(Math.max(0, parseInt(e.target.value) || 0))}
-                              data-testid="dp-seed-input"
-                              className="w-28 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            />
-                            <span className="text-[10px] text-muted-foreground">Seed value (0–999999)</span>
-                          </div>
-                        )}
-                      </div>
 
                       <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
                     </CardContent>
