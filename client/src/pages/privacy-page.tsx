@@ -34,7 +34,7 @@ import type { GeneralisationColConfig } from "@/lib/privacy/sdc";
 import { applyLaplace, applyGaussian, applyExponential, applyMixed, epsilonLabel, epsilonBadgeClass, type SensitivityMode } from "@/lib/privacy/dp";
 import { applyStatisticalSDG, applyDPSDG, computeSigmaFromEpsilon, computeEpsilonFromSigma } from "@/lib/privacy/synthetic";
 import { applyHomomorphicEncryption, applySMPC } from "@/lib/privacy/crypto";
-import { applyFederatedLearning } from "@/lib/privacy/federated";
+import { applyFederatedLearning, type FLParams } from "@/lib/privacy/federated";
 import { ATTACK_MATRIX, ATTACK_COLUMNS, countMitigations, type MitigationLevel } from "@/lib/privacy/attackMatrix";
 
 // ─── Technique catalogue ─────────────────────────────────────────────────────
@@ -667,11 +667,19 @@ export default function PrivacyPage() {
   const [smpcThreshold, setSmpcThreshold] = useState([2]);
 
   // ── Federated parameters ───────────────────────────────────────────────────
-  const [fedNodes,    setFedNodes]    = useState([3]);
-  const [fedRounds,   setFedRounds]   = useState([5]);
-  const [fedDP,       setFedDP]       = useState(false);
-  const [fedEps,      setFedEps]      = useState([2.0]);
-  const [fedGenSynth, setFedGenSynth] = useState(true);
+  const [fedNodes,       setFedNodes]       = useState([3]);
+  const [fedRounds,      setFedRounds]      = useState([5]);
+  const [fedDP,          setFedDP]          = useState(false);
+  const [fedEps,         setFedEps]         = useState([2.0]);
+  const [fedGenSynth,    setFedGenSynth]    = useState(true);
+  const [fedLocalEpochs, setFedLocalEpochs] = useState([3]);
+  const [fedLocalLR,     setFedLocalLR]     = useState([0.001]);
+  const [fedBatchSize,   setFedBatchSize]   = useState([4]);
+  const [fedPartition,   setFedPartition]   = useState<"iid" | "noniid">("iid");
+  const [fedDelta,       setFedDelta]       = useState([1e-5]);
+  const [fedClipNorm,    setFedClipNorm]    = useState([1.0]);
+  const [fedSynthSize,   setFedSynthSize]   = useState([100]);
+  const [fedSeed,        setFedSeed]        = useState(42);
 
   // ── Auto-assist state ──────────────────────────────────────────────────────
   const [autoSuggestions, setAutoSuggestions] = useState<AutoSuggest>({});
@@ -1103,13 +1111,22 @@ export default function PrivacyPage() {
           default: throw new Error("Unknown SDG technique");
         }
       } else if (family === "crypto") {
+        const activeCryptoCols = targetCols.length > 0 ? targetCols : numericCols;
         switch (cryptoTech) {
-          case "he":   res = applyHomomorphicEncryption(rawData, parseInt(heKeySize)); break;
-          case "smpc": res = applySMPC(rawData, smpcShares[0], smpcThreshold[0]); break;
+          case "he":   res = applyHomomorphicEncryption(rawData, activeCryptoCols, parseInt(heKeySize)); break;
+          case "smpc": res = applySMPC(rawData, activeCryptoCols, smpcShares[0], smpcThreshold[0]); break;
           default: throw new Error("Unknown crypto technique");
         }
       } else {
-        res = applyFederatedLearning(rawData, fedNodes[0], fedRounds[0], fedDP ? fedEps[0] : null, fedGenSynth);
+        const flParams: FLParams = {
+          nodes: fedNodes[0], rounds: fedRounds[0],
+          localEpochs: fedLocalEpochs[0], localLR: fedLocalLR[0],
+          batchSize: fedBatchSize[0], partition: fedPartition,
+          dp: fedDP ? { epsilon: fedEps[0], delta: fedDelta[0], clipNorm: fedClipNorm[0] } : null,
+          generateSynthetic: fedGenSynth, synthSize: fedSynthSize[0],
+          seed: fedSeed,
+        };
+        res = applyFederatedLearning(rawData, flParams);
       }
 
       setResult(res!);
@@ -1133,7 +1150,7 @@ export default function PrivacyPage() {
     } finally {
       setRunning(false);
     }
-  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, filteredTargetCols, allCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, noiseDist, noiseLambda, noiseClip, suppMode, suppCriterion, suppBudget, suppMinGroup, suppZThreshold, suppSACol, suppRiskVals, suppLower, suppUpper, suppMinCellFreq, genColConfigs, shuffleVariant, shuffleGroupCol, shuffleRankDelta, csRowCol, csColCol, csValCol, csAggregate, csNMin, csPPct, csKDom, csSecondary, epsilon, delta, dpProtectCategorical, synthSize, preserveCorr, synthBandwidthRule, synthSeedEnabled, synthSeed, dpSgdClip, dpSgdEpochs, dpSgdBatchSize, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, selectedDataset, toast]);
+  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, filteredTargetCols, allCols, numericCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, noiseDist, noiseLambda, noiseClip, suppMode, suppCriterion, suppBudget, suppMinGroup, suppZThreshold, suppSACol, suppRiskVals, suppLower, suppUpper, suppMinCellFreq, genColConfigs, shuffleVariant, shuffleGroupCol, shuffleRankDelta, csRowCol, csColCol, csValCol, csAggregate, csNMin, csPPct, csKDom, csSecondary, epsilon, delta, dpProtectCategorical, synthSize, preserveCorr, synthBandwidthRule, synthSeedEnabled, synthSeed, dpSgdClip, dpSgdEpochs, dpSgdBatchSize, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, fedLocalEpochs, fedLocalLR, fedBatchSize, fedPartition, fedDelta, fedClipNorm, fedSynthSize, fedSeed, selectedDataset, toast]);
 
   return (
     <DashboardLayout title="Privacy Enhancement" breadcrumbs={[{ label: "Privacy Enhancement" }]}>
@@ -1322,17 +1339,25 @@ export default function PrivacyPage() {
             </Card>
           )}
 
-          {/* Column config for non-SDC families */}
-          {selectedDS && family !== "sdc" && family !== "matrix" && showTC_other && (
-            <Card>
+          {/* Column config for crypto family — Columns to Encrypt / Share (numeric only) */}
+          {selectedDS && family === "crypto" && showTC_other && (
+            <Card className="border-amber-200 dark:border-amber-800">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Target Columns</CardTitle>
+                <CardTitle className="text-sm font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Key className="h-3.5 w-3.5" />
+                  Columns to Encrypt / Share
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground mb-2">All = none selected. Applied to all columns.</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {cryptoTech === "he" ? "Paillier HE" : "Shamir SMPC"} operates on numeric columns only.
+                  All = none selected (applies to all numeric columns).
+                </p>
                 <ScrollArea className="h-[140px] rounded-md border p-2">
                   <div className="space-y-1">
-                    {allCols.map((col) => (
+                    {numericCols.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic px-1">No numeric columns detected. Load a dataset first.</p>
+                    ) : numericCols.map((col) => (
                       <div key={col} className="flex items-center gap-2 py-0.5">
                         <Checkbox
                           id={`tgt2-${col}`}
@@ -1340,7 +1365,8 @@ export default function PrivacyPage() {
                           onCheckedChange={() => toggleTarget(col)}
                           data-testid={`checkbox-target2-${col}`}
                         />
-                        <label htmlFor={`tgt2-${col}`} className="text-xs cursor-pointer">{col}</label>
+                        <label htmlFor={`tgt2-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{colProfiles[col]?.uniqueCount}u</span>
                       </div>
                     ))}
                   </div>
@@ -2470,12 +2496,50 @@ export default function PrivacyPage() {
             {/* ══ FAMILY 5: FEDERATED LEARNING ════════════════════════════════ */}
             <TabsContent value="federated" className="mt-4">
               <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
-                <Card>
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Protocol</CardTitle></CardHeader>
-                  <CardContent>
-                    <TechList items={FED_TECHNIQUES} selected={fedTech} onSelect={() => {}} />
-                  </CardContent>
-                </Card>
+                <div className="space-y-3">
+                  <Card>
+                    <CardHeader className="pb-2"><CardTitle className="text-sm">Protocol</CardTitle></CardHeader>
+                    <CardContent>
+                      <TechList items={FED_TECHNIQUES} selected={fedTech} onSelect={() => {}} />
+                    </CardContent>
+                  </Card>
+
+                  {/* Dataset Summary panel */}
+                  {selectedDS && rawData.length > 0 && (
+                    <Card className="border-rose-200 dark:border-rose-800">
+                      <CardHeader className="pb-1.5 pt-3">
+                        <CardTitle className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Database className="h-3 w-3" /> Dataset Summary
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pb-3 space-y-1">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-muted-foreground">Records (n)</span>
+                          <span className="font-mono font-medium">{rawData.length.toLocaleString("en-IN")}</span>
+                        </div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-muted-foreground">Columns (d)</span>
+                          <span className="font-mono font-medium">{allCols.length}</span>
+                        </div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-muted-foreground">Numeric cols</span>
+                          <span className="font-mono font-medium">{numericCols.length}</span>
+                        </div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-muted-foreground">Nodes (K={fedNodes[0]})</span>
+                          <span className="font-mono font-medium">~{Math.ceil(rawData.length / fedNodes[0])} rec/node</span>
+                        </div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-muted-foreground">Partition</span>
+                          <span className={`font-medium ${fedPartition === "noniid" ? "text-amber-600" : "text-emerald-600"}`}>
+                            {fedPartition === "noniid" ? "Non-IID" : "IID"}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+
                 <div className="space-y-4 min-w-0 overflow-hidden">
                   <Card>
                     <CardHeader className="pb-3">
@@ -2487,25 +2551,70 @@ export default function PrivacyPage() {
                     </CardHeader>
                     <CardContent className="space-y-5">
                       <FormulaBox id="fedavg" />
-                      <SliderField label="Federated Nodes (K)" value={fedNodes} onChange={setFedNodes} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Dataset split across ${fedNodes[0]} simulated clients.`} />
-                      <SliderField label="Communication Rounds (T)" value={fedRounds} onChange={setFedRounds} min={1} max={20} step={1} format={(v) => String(v)} helpText="Number of federated averaging rounds" />
+
+                      {/* Federation topology */}
+                      <SliderField label="Federated Nodes (K)" value={fedNodes} onChange={setFedNodes} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Dataset partitioned across ${fedNodes[0]} simulated clients.`} />
+                      <SliderField label="Communication Rounds (T)" value={fedRounds} onChange={setFedRounds} min={1} max={10} step={1} format={(v) => String(v)} helpText="Global FedAvg aggregation rounds" />
+
+                      {/* Partition strategy */}
+                      <div className="space-y-2">
+                        <Label className="text-sm">Partition Strategy</Label>
+                        <RadioGroup value={fedPartition} onValueChange={(v) => setFedPartition(v as "iid" | "noniid")} className="flex gap-5">
+                          <div className="flex items-center gap-1.5">
+                            <RadioGroupItem value="iid" id="fed-iid" />
+                            <label htmlFor="fed-iid" className="text-xs cursor-pointer">IID (random shuffle)</label>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <RadioGroupItem value="noniid" id="fed-noniid" />
+                            <label htmlFor="fed-noniid" className="text-xs cursor-pointer">Non-IID (sorted skew)</label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+
+                      {/* Local training */}
+                      <SliderField label="Local Epochs (E)" value={fedLocalEpochs} onChange={setFedLocalEpochs} min={1} max={10} step={1} format={(v) => String(v)} helpText={`${fedLocalEpochs[0]} local SGD epoch(s) per node per round`} />
+                      <SliderField label="Local Learning Rate (η)" value={fedLocalLR} onChange={setFedLocalLR} min={0.0001} max={0.01} step={0.0001} format={(v) => v.toFixed(4)} helpText={`SGD learning rate on local data (η=${fedLocalLR[0].toFixed(4)})`} />
+                      <SliderField label="Mini-Batch Size (B)" value={fedBatchSize} onChange={setFedBatchSize} min={2} max={16} step={2} format={(v) => String(v)} helpText={`${fedBatchSize[0]} records per mini-batch (local SGD)`} />
+
+                      {/* DP-FedAvg toggle */}
                       <div className="flex items-center justify-between">
                         <div>
                           <Label className="text-sm">Enable DP-FedAvg</Label>
-                          <p className="text-xs text-muted-foreground">Add Gaussian noise to gradient aggregation</p>
+                          <p className="text-xs text-muted-foreground">Gaussian noise on gradient aggregation</p>
                         </div>
-                        <Switch checked={fedDP} onCheckedChange={setFedDP} />
+                        <Switch checked={fedDP} onCheckedChange={setFedDP} data-testid="fed-dp-toggle" />
                       </div>
-                      {fedDP && (
-                        <SliderField label="Privacy Budget (ε)" value={fedEps} onChange={setFedEps} min={0.1} max={10} step={0.1} format={(v) => v.toFixed(1)} helpText={`ε=${fedEps[0].toFixed(1)} for DP-FedAvg gradient noise (δ=1e-5)`} />
-                      )}
+                      {fedDP && (<>
+                        <SliderField label="Privacy Budget (ε)" value={fedEps} onChange={setFedEps} min={0.1} max={10} step={0.1} format={(v) => v.toFixed(1)} helpText={`ε=${fedEps[0].toFixed(1)} — lower = more private, more noise`} />
+                        <SliderField label="Delta (δ)" value={fedDelta} onChange={setFedDelta} min={1e-6} max={1e-3} step={1e-6} format={(v) => v.toExponential(0)} helpText={`δ=${fedDelta[0].toExponential(0)} failure probability (typ. 1/N)`} />
+                        <SliderField label="Clip Norm (C)" value={fedClipNorm} onChange={setFedClipNorm} min={0.1} max={5.0} step={0.1} format={(v) => v.toFixed(1)} helpText={`Update clipping: ΔW̃ = ΔW / max(1, ‖ΔW‖_F / C=${fedClipNorm[0].toFixed(1)})`} />
+                        <div className="rounded-md bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 px-3 py-2 text-[11px] text-rose-700 dark:text-rose-400">
+                          <p className="font-medium">Calibrated σ ≈ {(Math.sqrt(2 * fedRounds[0] * fedNodes[0] * Math.log(1 / fedDelta[0])) / fedEps[0]).toFixed(3)}</p>
+                          <p className="mt-0.5 text-rose-600 dark:text-rose-500">σ = √(2TK·ln(1/δ)) / ε  (RDP composition bound)</p>
+                        </div>
+                      </>)}
+
+                      {/* Synthetic output */}
                       <div className="flex items-center justify-between">
                         <div>
                           <Label className="text-sm">Generate Synthetic Output</Label>
-                          <p className="text-xs text-muted-foreground">Produce synthetic data from the aggregated model</p>
+                          <p className="text-xs text-muted-foreground">Sample new records from trained decoder</p>
                         </div>
-                        <Switch checked={fedGenSynth} onCheckedChange={setFedGenSynth} />
+                        <Switch checked={fedGenSynth} onCheckedChange={setFedGenSynth} data-testid="fed-synth-toggle" />
                       </div>
+                      {fedGenSynth && (
+                        <SliderField label="Synthetic Records" value={fedSynthSize} onChange={setFedSynthSize} min={10} max={500} step={10} format={(v) => String(v)} helpText={`Generate ${fedSynthSize[0]} synthetic records from decoder z~N(0,I)`} />
+                      )}
+
+                      {/* Random seed */}
+                      <div className="space-y-1.5">
+                        <Label className="text-sm">Random Seed</Label>
+                        <Input type="number" value={fedSeed}
+                          onChange={(e) => setFedSeed(parseInt(e.target.value) || 42)}
+                          className="h-8 text-xs font-mono w-32" data-testid="fed-seed-input" />
+                        <p className="text-xs text-muted-foreground">Reproducible node partitioning and weight initialisation</p>
+                      </div>
+
                       <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
                     </CardContent>
                   </Card>
