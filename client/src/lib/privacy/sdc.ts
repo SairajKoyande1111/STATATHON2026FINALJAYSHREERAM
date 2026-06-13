@@ -685,6 +685,13 @@ export function applyTCloseness(
   sensitiveAttr: string,
   t: number,
   kBase = 3,
+  // Issue 9: distanceMetric is now a real parameter, not a cosmetic toggle.
+  // For NUMERIC SA: EMD = CDF-based (ordered, sensitive to value ordering);
+  //                 TVD = ½ × L1 (unordered, ignores ordinal structure).
+  // For CATEGORICAL SA: EMD and TVD are mathematically identical (EMD reduces to
+  //   ½L1 for unordered categories), so the choice has no effect — the UI shows
+  //   an explanatory note rather than a disabled control.
+  distanceMetric: "emd" | "tvd" = "emd",
 ): PrivacyResult {
   const t0 = performance.now();
   if (data.length === 0 || qis.length === 0) return sdcEmpty("T-Closeness");
@@ -698,14 +705,24 @@ export function applyTCloseness(
   const globalVals = Array.from(globalFreq.keys()).sort();
   const isNumericSA = isNumericCol(data, sensitiveAttr);
 
-  function computeEMD(partition: DataRow[]): number {
+  // For categorical SA, EMD ≡ TVD (½ L1) — toggle has no mathematical effect.
+  // effectiveMetric captures what is actually computed so labels are accurate.
+  const effectiveMetric = isNumericSA ? distanceMetric : "tvd";
+  const metricLabel =
+    !isNumericSA              ? "TVD — ½ L1 (categorical; EMD≡TVD for unordered SA)"
+    : distanceMetric === "emd" ? "EMD — CDF-based (ordered, numeric SA)"
+                               : "TVD — ½ L1 (unordered; no CDF accumulation)";
+
+  function computeDistance(partition: DataRow[]): number {
     const localFreq = new Map<string, number>();
     partition.forEach((r) => {
       const v = String(r[sensitiveAttr] ?? "");
       localFreq.set(v, (localFreq.get(v) || 0) + 1);
     });
     const m = partition.length;
-    if (isNumericSA) {
+
+    if (isNumericSA && effectiveMetric === "emd") {
+      // EMD for ordered numeric SA: sum of absolute CDF differences (normalised)
       let cumP = 0, cumQ = 0, emd = 0;
       for (const v of globalVals) {
         cumP += (localFreq.get(v) || 0) / m;
@@ -714,11 +731,13 @@ export function applyTCloseness(
       }
       return emd / Math.max(globalVals.length - 1, 1);
     } else {
-      let emd = 0;
+      // TVD = ½ × L1 for both: (a) categorical SA (all cases), (b) numeric SA with TVD selected.
+      // This is the correct formula for Total Variation Distance (no CDF accumulation).
+      let l1 = 0;
       globalVals.forEach((v) => {
-        emd += Math.abs(((localFreq.get(v) || 0) / m) - ((globalFreq.get(v) || 0) / N));
+        l1 += Math.abs(((localFreq.get(v) || 0) / m) - ((globalFreq.get(v) || 0) / N));
       });
-      return emd / 2;
+      return l1 / 2;
     }
   }
 
@@ -731,12 +750,12 @@ export function applyTCloseness(
 
   const satisfying: DataRow[] = [];
   let satisfyingClasses = 0, violatingClasses = 0;
-  const emds: number[] = [];
+  const distances: number[] = [];
 
   for (const [, rows] of Array.from(classMap)) {
-    const emd = computeEMD(rows);
-    emds.push(emd);
-    if (emd <= t) {
+    const d = computeDistance(rows);
+    distances.push(d);
+    if (d <= t) {
       rows.forEach((r) => satisfying.push(r));
       satisfyingClasses++;
     } else {
@@ -744,41 +763,54 @@ export function applyTCloseness(
     }
   }
 
-  const minEMD = emds.length > 0 ? Math.min(...emds) : 0;
-  const maxEMD = emds.length > 0 ? Math.max(...emds) : 0;
-  const avgEMD = emds.length > 0 ? mean(emds) : 0;
+  const minDist = distances.length > 0 ? Math.min(...distances) : 0;
+  const maxDist = distances.length > 0 ? Math.max(...distances) : 0;
+  const avgDist = distances.length > 0 ? mean(distances) : 0;
   const tSatisfied = violatingClasses === 0;
 
-  const interp = `${satisfyingClasses} of ${classMap.size} equivalence classes satisfy t-closeness at t=${t}. ` +
-    `The maximum EMD observed is ${maxEMD.toFixed(4)} (threshold: ${t}). ` +
+  // Issue 10: use metric-neutral labels in interpretation and stats
+  const metricShort = effectiveMetric === "emd" ? "EMD" : "TVD";
+  const interp =
+    `${satisfyingClasses} of ${classMap.size} equivalence classes satisfy t-closeness at t=${t} using ${metricShort}. ` +
+    `Maximum ${metricShort} = ${maxDist.toFixed(4)} (threshold: ${t}). ` +
     (violatingClasses > 0 ? `${violatingClasses} classes failed and were suppressed. ` : "") +
-    `T-closeness prevents skewness attacks by ensuring no class has a significantly different SA distribution from the dataset as a whole.`;
+    (!isNumericSA ? `Note: for categorical SA "${sensitiveAttr}", EMD and TVD are mathematically identical (both equal ½ × L1 distance). The metric toggle has no effect on the result. ` : "") +
+    `T-Closeness prevents skewness attacks by ensuring no equivalence class has a significantly different SA distribution from the global dataset.`;
 
   const warnings: string[] = [
     "T-Closeness is the strictest SDC technique but significantly reduces data utility.",
     ...(t < 0.1 ? ["Very tight t threshold — try t=0.20–0.35 for better record retention."] : []),
-    ...(maxEMD > t && tSatisfied === false ? [`Max EMD ${maxEMD.toFixed(4)} exceeds t=${t}. Increase t or add more QI columns.`] : []),
+    ...(maxDist > t && !tSatisfied ? [`Max ${metricShort} ${maxDist.toFixed(4)} exceeds t=${t}. Increase t or add more QI columns.`] : []),
+    // Issue 9: inform user when metric toggle is inert
+    ...(!isNumericSA ? [`Note: SA "${sensitiveAttr}" is categorical — EMD ≡ TVD (½ L1) for unordered categories. Both metrics give identical results. Select a numeric/ordinal SA to see EMD vs TVD diverge.`] : []),
   ];
 
   const now = new Date().toLocaleString("en-IN");
+  // Issue 10: technique name and report title now reflect the effective metric
+  const techniqueName = `T-Closeness (${metricShort})`;
   const report = buildReport(
-    "T-Closeness (EMD)", "dataset", now, N, satisfying.length,
-    htmlRow("T Threshold", t) + htmlRow("Distance Metric", isNumericSA ? "EMD (ordered, CDF)" : "TVD (categorical, ½ L1)") +
-      htmlRow("Underlying K", k) + htmlRow("QI Columns", qis.join(", ")) + htmlRow("Sensitive Attribute", sensitiveAttr),
+    techniqueName, "dataset", now, N, satisfying.length,
+    htmlRow("T Threshold", t) +
+    htmlRow("Selected Metric", distanceMetric.toUpperCase()) +
+    htmlRow("Effective Metric", metricLabel) +
+    htmlRow("Underlying K", k) +
+    htmlRow("QI Columns", qis.join(", ")) +
+    htmlRow("Sensitive Attribute", sensitiveAttr) +
+    (!isNumericSA ? htmlRow("Metric Note", "EMD ≡ TVD for categorical SA — toggle is inert") : ""),
     htmlRow("T-Closeness Satisfied", tSatisfied ? "YES" : "NO", tSatisfied) +
     htmlRow("Total Equivalence Classes", classMap.size) +
-    htmlRow("Classes Passing (EMD ≤ t)", satisfyingClasses, satisfyingClasses === classMap.size) +
-    htmlRow("Classes Failing (EMD > t)", violatingClasses, violatingClasses === 0) +
+    htmlRow(`Classes Passing (${metricShort} ≤ t)`, satisfyingClasses, satisfyingClasses === classMap.size) +
+    htmlRow(`Classes Failing (${metricShort} > t)`, violatingClasses, violatingClasses === 0) +
     htmlRow("Suppressed Records", `${N - satisfying.length} (${N > 0 ? ((N - satisfying.length)/N*100).toFixed(1) : 0}%)`, N - satisfying.length === 0),
-    htmlRow("Min EMD (best class)", minEMD.toFixed(4), minEMD <= t) +
-    htmlRow("Max EMD (worst class)", maxEMD.toFixed(4), maxEMD <= t) +
-    htmlRow("Avg EMD", avgEMD.toFixed(4)),
+    htmlRow(`Min ${metricShort} (best class)`, minDist.toFixed(4), minDist <= t) +
+    htmlRow(`Max ${metricShort} (worst class)`, maxDist.toFixed(4), maxDist <= t) +
+    htmlRow(`Avg ${metricShort}`, avgDist.toFixed(4)),
     interp,
     warnings.filter((w) => !w.includes("strictest")),
   );
 
   return {
-    technique: "T-Closeness (EMD)", family: "SDC",
+    technique: techniqueName, family: "SDC",
     processedData: satisfying, originalCount: N, processedCount: satisfying.length,
     recordsSuppressed: N - satisfying.length,
     informationLoss: N > 0 ? (N - satisfying.length) / N : 0,
@@ -788,10 +820,14 @@ export function applyTCloseness(
       tClosenessSatisfied: tSatisfied ? "YES" : "NO",
       totalClasses: classMap.size,
       satisfyingClasses, violatingClasses,
-      minEMD: minEMD.toFixed(4),
-      maxEMD: maxEMD.toFixed(4),
-      avgEMD: avgEMD.toFixed(4),
-      emdType: isNumericSA ? "Ordered CDF" : "Categorical ½L1",
+      // Issue 10: renamed from emdType → metricType; label now tracks selected metric
+      selectedMetric: distanceMetric.toUpperCase(),
+      effectiveMetric: metricShort,
+      metricType: metricLabel,
+      categoricalEquivalenceNote: !isNumericSA ? "EMD≡TVD for unordered categorical SA" : null,
+      [`min${metricShort}`]: minDist.toFixed(4),
+      [`max${metricShort}`]: maxDist.toFixed(4),
+      [`avg${metricShort}`]: avgDist.toFixed(4),
     },
     warnings,
     interpretation: interp,

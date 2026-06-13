@@ -589,6 +589,7 @@ export default function PrivacyPage() {
   const [cRecursive,   setCRecursive]   = useState([0.5]);
   const [tVal,         setTVal]         = useState([0.3]);
   const [tKBase,       setTKBase]       = useState([3]);
+  const [tDistMetric,  setTDistMetric]  = useState<"emd" | "tvd">("emd");
   const [swapFrac,     setSwapFrac]     = useState([0.1]);
   const [swapSeed,     setSwapSeed]     = useState(42);
   const [microK,       setMicroK]       = useState([5]);
@@ -964,7 +965,7 @@ export default function PrivacyPage() {
             res = applyLDiversity(rawData, quasiIdentifiers, sensitiveAttr, lVal[0], lMethod, lKBase[0], cRecursive[0]);
             break;
           case "t-closeness":
-            res = applyTCloseness(rawData, quasiIdentifiers, sensitiveAttr, tVal[0], tKBase[0]);
+            res = applyTCloseness(rawData, quasiIdentifiers, sensitiveAttr, tVal[0], tKBase[0], tDistMetric);
             break;
           case "rank-swapping":
             res = applyRankSwapping(rawData, cols, swapFrac[0]);
@@ -1408,14 +1409,31 @@ export default function PrivacyPage() {
                           suggested={autoSuggestions.t ? `Suggested ${autoSuggestions.t}` : undefined} />
                         <div className="space-y-2">
                           <Label className="text-sm">Distance Metric</Label>
-                          <RadioGroup defaultValue="emd" className="flex gap-4">
-                            {[["emd","EMD (Earth Mover's)"],["tvd","TVD (Total Variation)"]].map(([v, label]) => (
+                          {/* Issue 9: wired to tDistMetric state and passed to applyTCloseness */}
+                          <RadioGroup value={tDistMetric} onValueChange={(v) => setTDistMetric(v as "emd" | "tvd")} className="flex gap-4">
+                            {([["emd","EMD (Earth Mover's)"],["tvd","TVD (Total Variation)"]] as [string,string][]).map(([v, label]) => (
                               <div key={v} className="flex items-center gap-2">
                                 <RadioGroupItem value={v} id={`dm-${v}`} />
                                 <label htmlFor={`dm-${v}`} className="text-xs cursor-pointer">{label}</label>
                               </div>
                             ))}
                           </RadioGroup>
+                          {/* Issue 9: show note when SA is categorical — EMD≡TVD, toggle is inert */}
+                          {sensitiveAttr && colProfiles[sensitiveAttr]?.classification !== "NUMERIC" && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-1 leading-snug">
+                              ℹ️ <strong>SA "{sensitiveAttr}" is categorical</strong> — for unordered categories, EMD reduces to ½ × L1 = TVD. Both metrics give identical results here. To see EMD vs TVD diverge, choose a numeric/ordinal SA (e.g. Age, Income).
+                            </p>
+                          )}
+                          {sensitiveAttr && colProfiles[sensitiveAttr]?.classification === "NUMERIC" && tDistMetric === "emd" && (
+                            <p className="text-xs text-blue-600 dark:text-blue-400 leading-snug">
+                              EMD uses CDF-based distance (sensitive to value ordering).
+                            </p>
+                          )}
+                          {sensitiveAttr && colProfiles[sensitiveAttr]?.classification === "NUMERIC" && tDistMetric === "tvd" && (
+                            <p className="text-xs text-blue-600 dark:text-blue-400 leading-snug">
+                              TVD uses ½ × L1 (no CDF — ignores ordinal structure of numeric SA).
+                            </p>
+                          )}
                         </div>
                         <SliderField label="Underlying K" value={tKBase} onChange={setTKBase} min={2} max={15} step={1} format={(v) => String(v)}
                           helpText="K-Anonymity base applied before checking t-closeness"
