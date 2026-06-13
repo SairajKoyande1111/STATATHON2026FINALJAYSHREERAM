@@ -1787,6 +1787,14 @@ export function applyExplicitSuppression(
   const suppressedRowSet = new Set<number>();
   const suppressedCells: [number, string][] = [];
 
+  // Issue 16 fix: track rawCandidateCount before budget cap to distinguish
+  // "cap triggered" (candidates > maxSuppress) from "coincidental" (candidates ≤ maxSuppress).
+  let rawCandidateCount = 0;
+  let budgetCapTriggered = false;
+
+  // Issue 15 fix: for uniqueness criterion, expose per-group breakdown.
+  let uniquenessGroupBreakdown: { key: string; size: number; rows: number }[] = [];
+
   // --- ROW SUPPRESSION ---
   if (mode === "row" || mode === "both") {
     let candidates: number[] = [];
@@ -1799,6 +1807,18 @@ export function applyExplicitSuppression(
       const minGrp = params.minGroupSize ?? 2;
       candidates = data.map((r, i) => ({ r, i }))
         .filter(({ r }) => (groupSizes.get(groupKey(r)) ?? 1) < minGrp).map(({ i }) => i);
+
+      // Issue 15 fix: collect group breakdown for all under-threshold groups
+      const tinyGroups = new Map<string, number>();
+      candidates.forEach((i) => {
+        const k = groupKey(data[i]);
+        tinyGroups.set(k, groupSizes.get(k) ?? 1);
+      });
+      uniquenessGroupBreakdown = Array.from(tinyGroups.entries()).map(([key, size]) => ({
+        key: key.length > 40 ? key.slice(0, 37) + "…" : key,
+        size,
+        rows: candidates.filter((i) => groupKey(data[i]) === key).length,
+      }));
 
     } else if (criterion === "outlier") {
       const tCols = params.targetCols ?? Object.keys(data[0] ?? {}).filter((c) => isNumericCol(data, c));
@@ -1829,10 +1849,16 @@ export function applyExplicitSuppression(
         .map(({ i }) => i);
     }
 
+    // Issue 16 fix: record raw candidate count before slicing to budget
+    rawCandidateCount = candidates.length;
+    budgetCapTriggered = rawCandidateCount > maxSuppress;
     candidates.slice(0, maxSuppress).forEach((i) => suppressedRowSet.add(i));
   }
 
   // --- CELL-LEVEL SUPPRESSION ---
+  // Issue 15 fix: track per-column cell suppression counts so the report can
+  // explain which columns were affected and why (value frequency < minCellFreq).
+  const cellSuppByCol: Record<string, number> = {};
   if (mode === "cell" || mode === "both") {
     const tCols = params.targetCols ?? (data.length > 0 ? Object.keys(data[0]) : []);
     const minFreq = params.minCellFrequency ?? 3;
@@ -1843,6 +1869,7 @@ export function applyExplicitSuppression(
         if ((freqMap.get(String(r[col] ?? "")) ?? 0) < minFreq) {
           processed[i][col] = "***";
           suppressedCells.push([i, col]);
+          cellSuppByCol[col] = (cellSuppByCol[col] ?? 0) + 1;
         }
       });
     });
@@ -1856,32 +1883,110 @@ export function applyExplicitSuppression(
   const budgetUsed = maxSuppress > 0 ? rowsSuppressed / maxSuppress : 0;
   const compliancePassed = rowSuppRate <= suppressionBudgetPct;
 
-  const interp = `Explicit suppression in "${mode}" mode using the "${criterion}" criterion. ` +
-    (mode !== "cell" ? `${rowsSuppressed} rows (${(rowSuppRate*100).toFixed(1)}%) suppressed — budget: ${(budgetUsed*100).toFixed(1)}%. ` : "") +
-    (mode !== "row" ? `${cellsSuppressed} cells suppressed at cell level. ` : "") +
+  // Issue 17 fix: single-column QI for uniqueness is unreliable — warn and recommend multi-column.
+  const qiColsUsed = params.qiCols ?? [];
+  const singleQIUniqueness = criterion === "uniqueness" && qiColsUsed.length === 1;
+
+  // Issue 15 fix: cell suppression clarification — describe the frequency-threshold mechanism,
+  // not row-level uniqueness. Cells with value frequency < minCellFreq are masked (→ "***").
+  const cellSuppColList = Object.entries(cellSuppByCol)
+    .map(([col, n]) => `${col} (${n})`)
+    .join(", ");
+
+  // Issue 16 fix: interpretation now discloses rawCandidateCount and whether cap triggered.
+  const budgetNote = (mode === "row" || mode === "both")
+    ? (budgetCapTriggered
+        ? `Budget cap TRIGGERED: ${rawCandidateCount} rows met the criterion but only ${maxSuppress} (${(suppressionBudgetPct*100).toFixed(0)}% budget) were suppressed — ${rawCandidateCount - rowsSuppressed} rows were spared by the cap. `
+        : `Budget cap NOT triggered: all ${rawCandidateCount} qualifying rows fit within the ${(suppressionBudgetPct*100).toFixed(0)}% budget (${maxSuppress} max). Utilisation = ${(budgetUsed*100).toFixed(1)}% is not a coincidence — it equals 100% only if candidates = budget cap exactly. `)
+    : "";
+
+  const interp =
+    `Explicit suppression — mode: "${mode}", criterion: "${criterion}". ` +
+    (mode !== "cell"
+      ? `Row suppression (criterion: ${criterion}): groups in the QI space [${qiColsUsed.join(", ")}] ` +
+        `with fewer than ${params.minGroupSize ?? 2} members are considered unique/risky and the rows are removed. ` +
+        `${rowsSuppressed} rows (${(rowSuppRate*100).toFixed(1)}%) suppressed. ${budgetNote}`
+      : "") +
+    (mode !== "row"
+      ? `Cell suppression: individual cell values appearing fewer than ${params.minCellFrequency ?? 3} times ` +
+        `in their column are replaced with "***" (the cell value is masked — the row is kept). ` +
+        `${cellsSuppressed} cell${cellsSuppressed !== 1 ? "s" : ""} masked` +
+        (cellSuppColList ? ` across: ${cellSuppColList}` : "") + `. `
+      : "") +
     `Records retained: ${finalData.length} of ${N}.`;
 
   const warnings: string[] = [
-    ...(rowSuppRate > suppressionBudgetPct ? [`Row suppression ${(rowSuppRate*100).toFixed(1)}% exceeds budget ${(suppressionBudgetPct*100).toFixed(0)}%.`] : []),
-    ...(rowsSuppressed === 0 && (mode === "row" || mode === "both") ? ["No rows matched the suppression criterion."] : []),
-    ...(cellsSuppressed === 0 && (mode === "cell" || mode === "both") ? ["No cells matched the frequency threshold."] : []),
+    ...(rowSuppRate > suppressionBudgetPct
+      ? [`Row suppression ${(rowSuppRate*100).toFixed(1)}% exceeds budget ${(suppressionBudgetPct*100).toFixed(0)}%.`]
+      : []),
+    ...(rowsSuppressed === 0 && (mode === "row" || mode === "both")
+      ? ["No rows matched the suppression criterion."]
+      : []),
+    ...(cellsSuppressed === 0 && (mode === "cell" || mode === "both")
+      ? ["No cells matched the frequency threshold — all cell values appear ≥ minCellFrequency times."]
+      : []),
+    // Issue 16 fix: flag coincidental 100% utilisation
+    ...(!budgetCapTriggered && budgetUsed >= 0.99 && rowsSuppressed > 0
+      ? [`Budget utilisation = 100% is coincidental — all ${rawCandidateCount} qualifying rows happened to exactly match the ${maxSuppress}-row cap. Cap was NOT triggered.`]
+      : []),
+    // Issue 17 fix: warn about single-column QI for uniqueness
+    ...(singleQIUniqueness
+      ? [`Single-column QI ("${qiColsUsed[0]}") makes uniqueness test too narrow — many rows may share the same single value, masking true individual uniqueness. Re-run with a multi-column QI set (e.g. State + Age + Gender) to test meaningful combinations, as done in K-Anonymity/T-Closeness.`]
+      : []),
   ];
+
+  // Issue 15 fix: per-column cell suppression table; uniqueness group breakdown table
+  const cellColTable = Object.entries(cellSuppByCol).map(([col, n]) =>
+    htmlRow(col, `${n} cell${n !== 1 ? "s" : ""} masked (value freq < ${params.minCellFrequency ?? 3})`)
+  ).join("");
+
+  const groupBreakdownHtml = uniquenessGroupBreakdown.length > 0
+    ? uniquenessGroupBreakdown.slice(0, 10).map(({ key, size, rows }) =>
+        htmlRow(`QI="${key}"`, `group size=${size} → ${rows} row${rows !== 1 ? "s" : ""} suppressed`)
+      ).join("") +
+      (uniquenessGroupBreakdown.length > 10
+        ? htmlRow("…", `${uniquenessGroupBreakdown.length - 10} more under-threshold groups`) : "")
+    : "";
 
   const now = new Date().toLocaleString("en-IN");
   const report = buildReport(
     "Explicit Suppression", "dataset", now, N, finalData.length,
-    htmlRow("Mode", mode) + htmlRow("Criterion", criterion) +
-    htmlRow("Suppression Budget", `${(suppressionBudgetPct*100).toFixed(0)}%`) +
-    (criterion === "uniqueness" ? htmlRow("Min Group Size", params.minGroupSize ?? 2) : "") +
-    (criterion === "outlier" ? htmlRow("Z Threshold", params.zThreshold ?? 3.0) : "") +
+    /* paramsHtml */
+    htmlRow("Mode", mode) +
+    htmlRow("Criterion", criterion) +
+    htmlRow("Suppression Budget", `${(suppressionBudgetPct*100).toFixed(0)}% (max ${maxSuppress} rows)`) +
+    (criterion === "uniqueness"
+      ? htmlRow("QI Columns", qiColsUsed.join(", ") || "(none)") +
+        htmlRow("Min Group Size", params.minGroupSize ?? 2)
+      : "") +
+    (criterion === "outlier"    ? htmlRow("Z Threshold", params.zThreshold ?? 3.0) : "") +
     (criterion === "sensitive_value" ? htmlRow("Risk Values", (params.riskValues ?? []).join(", ")) : "") +
-    (criterion === "threshold" ? htmlRow("Bounds", `[${params.lowerBound ?? "−∞"}, ${params.upperBound ?? "+∞"}]`) : ""),
-    htmlRow("Compliance", compliancePassed ? "YES" : "NO", compliancePassed) +
-    htmlRow("Rows Suppressed", `${rowsSuppressed} (${(rowSuppRate*100).toFixed(1)}%)`, rowSuppRate <= suppressionBudgetPct) +
-    htmlRow("Cells Suppressed", cellsSuppressed) +
+    (criterion === "threshold"  ? htmlRow("Bounds", `[${params.lowerBound ?? "−∞"}, ${params.upperBound ?? "+∞"}]`) : "") +
+    (mode !== "row"             ? htmlRow("Min Cell Frequency", params.minCellFrequency ?? 3) : ""),
+    /* complianceHtml */
+    htmlRow("Compliance", compliancePassed ? "PASS" : "FAIL", compliancePassed) +
+    htmlRow("Rows Suppressed", `${rowsSuppressed} / ${N} (${(rowSuppRate*100).toFixed(1)}%)`, rowSuppRate <= suppressionBudgetPct) +
+    // Issue 16 fix: disclose raw candidate count and cap status
+    (mode !== "cell"
+      ? htmlRow("Raw Candidates (before budget cap)", rawCandidateCount) +
+        htmlRow("Budget Cap", budgetCapTriggered ? `TRIGGERED — ${rawCandidateCount - rowsSuppressed} rows spared` : "NOT triggered — all candidates fit within budget")
+      : "") +
     htmlRow("Budget Utilisation", `${(budgetUsed*100).toFixed(1)}%`) +
-    htmlRow("Records Retained", finalData.length),
-    "", interp, warnings,
+    // Issue 15 fix: cells suppression with column breakdown
+    (mode !== "row"
+      ? htmlRow("Cells Suppressed (masked to ***)", `${cellsSuppressed} individual cell values` +
+          (cellSuppColList ? ` in: ${cellSuppColList}` : "")) +
+        htmlRow("Cell Suppression Mechanism", `Values with column-frequency < ${params.minCellFrequency ?? 3} are masked; rows are retained`)
+      : "") +
+    htmlRow("Records Retained", `${finalData.length} of ${N}`),
+    /* metricsHtml — group breakdown + cell-col table */
+    groupBreakdownHtml + cellColTable,
+    /* interpretation */
+    interp,
+    /* recommendations */
+    warnings,
+    /* overallPassed */
+    compliancePassed,
   );
 
   return {
@@ -1893,11 +1998,18 @@ export function applyExplicitSuppression(
     stats: {
       mode, criterion,
       rowsSuppressed,
-      rowSuppressionRate:  `${(rowSuppRate*100).toFixed(1)}%`,
+      rowSuppressionRate:     `${(rowSuppRate*100).toFixed(1)}%`,
+      // Issue 16 fix: expose raw candidate count and cap status in stats
+      rawCandidateCount,
+      budgetCapTriggered:     budgetCapTriggered ? `YES — ${rawCandidateCount - rowsSuppressed} rows spared` : "NO — all candidates within budget",
+      budgetUtilisation:      `${(budgetUsed*100).toFixed(1)}%`,
+      // Issue 15 fix: cell suppression detail in stats
       cellsSuppressed,
-      cellSuppressionRate: `${(cellSuppRate*100).toFixed(3)}%`,
-      budgetUtilisation:   `${(budgetUsed*100).toFixed(1)}%`,
-      recordsRetained:     finalData.length,
+      cellSuppressionRate:    `${(cellSuppRate*100).toFixed(3)}%`,
+      cellsAffectedColumns:   cellSuppColList || "N/A",
+      recordsRetained:        finalData.length,
+      // Issue 17 fix: expose QI dimensionality warning in stats
+      ...(singleQIUniqueness ? { qiDimensionalityWarning: "Single-column QI — re-run with multi-column QI for meaningful uniqueness" } : {}),
     },
     warnings, interpretation: interp, compliancePassed, report,
   };
