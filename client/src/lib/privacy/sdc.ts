@@ -147,8 +147,27 @@ function medianValue(vals: number[]): number {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-function mondrianPartition(data: DataRow[], qis: string[], k: number): Partition[] {
-  if (data.length === 0 || qis.length === 0) return [];
+// ─── FNV-1a 32-bit hash (Issue 8: content-derived pseudonymisation) ───────────
+// Hashes (col + NUL + val) so identical sequential-position values in different
+// columns produce different PSEUDO_NNNNN outputs, eliminating cross-column linkage.
+function fnv1a32(s: string): number {
+  let h = 2166136261; // FNV offset basis
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0; // FNV prime, keep uint32
+  }
+  return h;
+}
+
+// Result type that carries Issue-1 diagnostic info back to the caller
+interface MondrianResult {
+  partitions: Partition[];
+  oversizedLeafCount: number;   // #leaves with size > 2k−1 (couldn't be split further)
+  oversizedLeafRecords: number; // total records in those leaves
+}
+
+function mondrianPartition(data: DataRow[], qis: string[], k: number): MondrianResult {
+  if (data.length === 0 || qis.length === 0) return { partitions: [], oversizedLeafCount: 0, oversizedLeafRecords: 0 };
   const globalRanges = new Map<string, number>();
   qis.forEach((c) => globalRanges.set(c, columnRange(data, c)));
   const globalDistinctCounts = new Map<string, number>();
@@ -204,6 +223,13 @@ function mondrianPartition(data: DataRow[], qis: string[], k: number): Partition
     return null;
   }
 
+  // Issue 1: track unsplittable leaves whose size exceeds 2k−1
+  // Mondrian invariant: a leaf is returned here only when ALL columns fail to split.
+  // A leaf with size > 2k−1 means data diversity was too low to subdivide further;
+  // k-anonymity is still satisfied (size ≥ k) but the class is coarser than ideal.
+  let oversizedLeafCount = 0;
+  let oversizedLeafRecords = 0;
+
   function split(partition: Partition): Partition[] {
     const { indices } = partition;
     // Sort columns by descending score and try each in turn
@@ -221,10 +247,17 @@ function mondrianPartition(data: DataRow[], qis: string[], k: number): Partition
         return [...split({ indices: left }), ...split({ indices: right })];
       }
     }
-    return [partition]; // No valid split found on any column
+    // No valid split found on any column — leaf partition retained as-is.
+    // Issue 1: flag if this leaf is larger than 2k−1 (could not be halved while keeping both ≥ k)
+    if (indices.length > 2 * k - 1) {
+      oversizedLeafCount++;
+      oversizedLeafRecords += indices.length;
+    }
+    return [partition];
   }
 
-  return split({ indices: data.map((_, i) => i) });
+  const partitions = split({ indices: data.map((_, i) => i) });
+  return { partitions, oversizedLeafCount, oversizedLeafRecords };
 }
 
 
@@ -266,26 +299,43 @@ export function applyKAnonymity(
     }
   });
 
-  // ── Issue 6: Build stable pseudonym maps for Direct-ID columns ──────────────
-  // Same original value always maps to the same PSEUDO_NNNNN within this run.
+  // ── Issue 8 fix: Content-derived pseudonym maps for Direct-ID columns ────────
+  // Each pseudonym is derived from FNV-1a hash of (col + NUL + originalValue).
+  // This breaks the cross-column correlation that arose when both columns shared
+  // the same sequential counter — FSU_Serial_No and District_code now produce
+  // independent PSEUDO_NNNNN values even when they have the same row-count.
+  // Within-column stability is preserved: same value always → same pseudonym.
   const pseudoMaps = new Map<string, Map<string, string>>();
   directIds.forEach((col) => {
     const map = new Map<string, string>();
-    let counter = 1;
-    stableData.forEach((row) => {
-      const v = String(row[col] ?? "");
-      if (!map.has(v)) { map.set(v, `PSEUDO_${String(counter).padStart(5, "0")}`); counter++; }
+    // Sort distinct values for stable ordering, then assign hash-derived numbers
+    const distinct = Array.from(new Set(stableData.map((r) => String(r[col] ?? "")))).sort();
+    const usedNums = new Set<number>();
+    distinct.forEach((v) => {
+      // Hash col+"\0"+val so different columns with different values never collide by position
+      let num = fnv1a32(col + "\0" + v) % 100000;
+      // Linear-probe collision resolution within this column's namespace
+      while (usedNums.has(num)) num = (num + 1) % 100000;
+      usedNums.add(num);
+      map.set(v, `PSEUDO_${String(num).padStart(5, "0")}`);
     });
     pseudoMaps.set(col, map);
   });
 
   // ── Partition ────────────────────────────────────────────────────────────────
-  const rawPartitions = mondrianPartition(stableData, qis, k);
-  let validPartitions = rawPartitions.filter((p) => p.indices.length >= k);
-  let smallPartitions = rawPartitions.filter((p) => p.indices.length < k);
+  // Issue 1: mondrianPartition now returns oversized-leaf diagnostics alongside partitions.
+  // Mondrian invariant: a split is only accepted when both halves are ≥ k, so all leaf
+  // partitions have size ≥ k. "Small partitions" (size < k) therefore never arise from
+  // Mondrian itself — the suppression/merge path (Issue 5) is a safety net for partitions
+  // injected from outside, and for oversized leaves (size > 2k−1) that could not be halved.
+  const { partitions: rawPartitionsAll, oversizedLeafCount, oversizedLeafRecords } = mondrianPartition(stableData, qis, k);
+  let validPartitions = rawPartitionsAll.filter((p) => p.indices.length >= k);
+  let smallPartitions = rawPartitionsAll.filter((p) => p.indices.length < k);
   const initialSmallCount = smallPartitions.reduce((s, p) => s + p.indices.length, 0);
 
   // ── Issue 5: Merge-smallest fallback when suppression would exceed limit ─────
+  // Note: under Mondrian's invariant this path is only reachable if the caller passes
+  // pre-filtered partitions with sub-k sizes, or if future algorithm changes produce them.
   const mergedPartitions: Partition[] = [];
   let mergeActivated = false;
   if (initialSmallCount > maxSuppressCount && smallPartitions.length > 0) {
@@ -390,9 +440,15 @@ export function applyKAnonymity(
     };
   });
 
+  // Issue 8: pseudonym note now reflects content-derived (FNV-1a hash) approach
   const pseudoNote = directIds.length > 0
-    ? ` Direct-ID columns (${directIds.join(", ")}) were pseudonymised — original values replaced with sequential PSEUDO_NNNNN identifiers.`
+    ? ` Direct-ID columns (${directIds.join(", ")}) were pseudonymised using content-derived FNV-1a hashing — each column's values map independently to PSEUDO_NNNNN tokens, preventing cross-column re-identification via pseudonym correlation.`
     : "";
+  // Issue 1: oversized-leaf note
+  const oversizedNote = oversizedLeafCount > 0
+    ? ` [Issue 1] ${oversizedLeafCount} equivalence class(es) containing ${oversizedLeafRecords} records could not be split further (size > ${2 * k - 1} = 2k−1); all QI columns had insufficient diversity to produce two sub-partitions of size ≥ k. k-Anonymity is still satisfied but these classes are coarser than optimal.`
+    : "";
+  // Issue 5: merge note (rarely triggered under Mondrian invariant)
   const mergeNote = mergeActivated
     ? ` Suppression limit was exceeded; merge fallback formed ${mergedPartitions.length} additional group(s) from small partitions.`
     : "";
@@ -405,15 +461,19 @@ export function applyKAnonymity(
     `k-Anonymity is ${kSatisfied ? "SATISFIED" : "NOT SATISFIED — min class < k"}. ` +
     `GIL = ${(gil * 100).toFixed(1)}% — ${(gil * 100).toFixed(0)}% of QI precision sacrificed for privacy. ` +
     `${suppressed.length} records (${(suppressionRate * 100).toFixed(1)}%) suppressed.` +
-    mergeNote + pseudoNote + " " + gilNote + " " + detNote;
+    mergeNote + oversizedNote + pseudoNote + " " + gilNote + " " + detNote;
 
   const warnings: string[] = [
     ...(suppressionRate > suppressionLimit && suppressionLimit > 0
       ? [`Suppression ${(suppressionRate*100).toFixed(1)}% exceeds limit ${(suppressionLimit*100).toFixed(0)}% — consider lowering k or raising the suppression limit.`] : []),
     ...(mergeActivated ? [`Merge fallback: ${mergedPartitions.length} group(s) formed by merging small partitions to honour suppression limit.`] : []),
+    // Issue 1: surface oversized-leaf warning so the QA issue is visible in the results panel
+    ...(oversizedLeafCount > 0 ? [
+      `[Issue 1] ${oversizedLeafCount} oversized leaf partition(s) (${oversizedLeafRecords} records, size > ${2*k-1}=2k−1) could not be split — QI diversity too low. k-Anonymity still holds but classes are coarser than optimal. Consider reducing k or adding QI columns.`
+    ] : []),
     ...(suppressionRate > 0.1 ? ["Suppression > 10% — consider lowering k."] : []),
     ...(gil > 0.5 ? ["GIL > 50% — high information loss. Consider reducing k or narrowing QI set."] : []),
-    ...(directIds.length > 0 ? [`${directIds.length} Direct-ID column(s) pseudonymised: ${directIds.join(", ")}.`] : []),
+    ...(directIds.length > 0 ? [`${directIds.length} Direct-ID column(s) pseudonymised with content-derived hashing (FNV-1a): ${directIds.join(", ")} — cross-column pseudonym correlation eliminated.`] : []),
     "k-Anonymity does not protect against attribute disclosure or differencing attacks.",
   ];
 
@@ -425,14 +485,15 @@ export function applyKAnonymity(
     htmlRow("Suppression Limit", `${(suppressionLimit * 100).toFixed(0)}%`) +
     htmlRow("Generalisation Method", genMethod === "midpoint" ? "Midpoint [(lo+hi)/2 | most_common_value]" : "Range [[lo–hi] | {all_values}]") +
     htmlRow("QI Columns", qis.join(", ")) +
-    (directIds.length > 0 ? htmlRow("Pseudonymised Direct-IDs", directIds.join(", ")) : ""),
+    (directIds.length > 0 ? htmlRow("Pseudonymised Direct-IDs (content-hashed)", directIds.join(", ")) : ""),
     htmlRow("k-Anonymity Satisfied", kSatisfied ? "YES" : "NO", kSatisfied) +
     htmlRow("Min Equivalence Class", `${minEC} (≥ ${k})`, minEC >= k) +
     htmlRow("Avg Equivalence Class", avgEC.toFixed(1)) +
     htmlRow("Max Equivalence Class", equivClassSizes.length > 0 ? String(Math.max(...equivClassSizes)) : "0") +
     htmlRow("Number of Classes", equivClassSizes.length) +
     htmlRow("Suppressed Records", `${suppressed.length} (${(suppressionRate*100).toFixed(1)}%)`, suppressionRate <= suppressionLimit) +
-    (mergeActivated ? htmlRow("Merge Fallback Groups", mergedPartitions.length) : ""),
+    (mergeActivated ? htmlRow("Merge Fallback Groups", mergedPartitions.length) : "") +
+    htmlRow("Oversized Leaf Partitions (Issue 1)", oversizedLeafCount > 0 ? `${oversizedLeafCount} class(es), ${oversizedLeafRecords} records` : "None", oversizedLeafCount === 0),
     htmlRow("GIL Score (avg across QIs)", `${(gil * 100).toFixed(2)}%`, gil <= 0.3) +
     qis.map((col) => htmlRow(
       `GIL — ${col} (${isNumericCol(stableData, col) ? "numeric: range/global_range" : "categorical: (d_p−1)/(d_g−1)"})`,
@@ -458,7 +519,12 @@ export function applyKAnonymity(
       suppressionRate: `${(suppressionRate * 100).toFixed(1)}%`,
       suppressedRecords: suppressed.length,
       mergedGroups: mergeActivated ? mergedPartitions.length : 0,
+      // Issue 1: oversized-leaf diagnostics — visible in the stats panel
+      oversizedLeafPartitions: oversizedLeafCount,
+      oversizedLeafRecords,
+      // Issue 8: pseudonymisation method is now content-derived (FNV-1a), not sequential
       pseudonymisedCols: directIds.length,
+      pseudonymisationMethod: directIds.length > 0 ? "FNV-1a content-hash (col+value)" : "N/A",
       generalisationMethod: genMethod,
       gilScore: `${(gil * 100).toFixed(2)}%`,
     },
@@ -494,10 +560,10 @@ export function applyLDiversity(
 
   const logL = Math.log(l);
   const kForEC = Math.max(2, kBase);
-  const partitions = mondrianPartition(data, qis, kForEC);
+  const { partitions: ldPartitions } = mondrianPartition(data, qis, kForEC);
 
   const classMap = new Map<number, number[]>();
-  partitions.forEach((part, idx) => {
+  ldPartitions.forEach((part, idx) => {
     if (part.indices.length >= kForEC) classMap.set(idx, part.indices);
   });
 
@@ -657,9 +723,9 @@ export function applyTCloseness(
   }
 
   const k = Math.max(2, kBase);
-  const partitions = mondrianPartition(data, qis, k);
+  const { partitions: tcPartitions } = mondrianPartition(data, qis, k);
   const classMap = new Map<number, DataRow[]>();
-  partitions.forEach((part, idx) => {
+  tcPartitions.forEach((part, idx) => {
     if (part.indices.length >= k) classMap.set(idx, part.indices.map((i) => data[i]));
   });
 
