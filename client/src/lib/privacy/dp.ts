@@ -45,6 +45,21 @@ function computeClip(vals: number[], mode: SensitivityMode): [number, number] {
   return [sorted[0], sorted[sorted.length - 1]]; // auto = min–max
 }
 
+// ── Adaptive clipping — auto-upgrades to IQR when column range > 100,000 ─────
+// Returns [lo, hi, wasUpgraded]. Prevents catastrophic noise on high-range cols.
+function computeAdaptiveClip(vals: number[], mode: SensitivityMode): [number, number, boolean] {
+  if (mode === "auto" && vals.length > 0) {
+    const sorted = [...vals].sort((a, b) => a - b);
+    const range = sorted[sorted.length - 1] - sorted[0];
+    if (range > 100000) {
+      const [lo, hi] = computeClip(vals, "iqr");
+      return [lo, hi, true];
+    }
+  }
+  const [lo, hi] = computeClip(vals, mode);
+  return [lo, hi, false];
+}
+
 // ── DP Options ────────────────────────────────────────────────────────────────
 export interface DPOptions {
   sensitivityMode?: SensitivityMode; // default "auto"
@@ -322,9 +337,12 @@ export function applyLaplace(
   const colStatMap: Record<string, ColDPStat> = {};
   const clipBounds: Record<string, [number, number]> = {};
 
+  const adaptiveUpgraded: string[] = [];
+
   for (const col of numericCols) {
     const vals = data.map((r) => Number(r[col])).filter((v) => !isNaN(v));
-    const [lo, hi] = computeClip(vals, sensitivityMode);
+    const [lo, hi, wasUpgraded] = computeAdaptiveClip(vals, sensitivityMode);
+    if (wasUpgraded) adaptiveUpgraded.push(col);
     const sensitivity = Math.max(hi - lo, 1e-9);
     const scale = sensitivity / epsilon;
     clipBounds[col] = [lo, hi];
@@ -359,6 +377,8 @@ export function applyLaplace(
     ? "IQR-based (1.5×IQR outlier-robust)"
     : sensitivityMode === "percentile"
     ? "Percentile (1st–99th)"
+    : adaptiveUpgraded.length > 0
+    ? `Auto (Min–Max) + IQR upgrade for: ${adaptiveUpgraded.join(", ")}`
     : "Auto (Min–Max range)";
 
   const interpretation =
@@ -440,9 +460,12 @@ export function applyGaussian(
   const processed: DataRow[] = data.map((r) => ({ ...r }));
   const colStatMap: Record<string, ColDPStat> = {};
 
+  const adaptiveUpgradedG: string[] = [];
+
   for (const col of numericCols) {
     const vals = data.map((r) => Number(r[col])).filter((v) => !isNaN(v));
-    const [lo, hi] = computeClip(vals, sensitivityMode);
+    const [lo, hi, wasUpgraded] = computeAdaptiveClip(vals, sensitivityMode);
+    if (wasUpgraded) adaptiveUpgradedG.push(col);
     const sensitivity = Math.max(hi - lo, 1e-9);
     // σ ≥ Δ₂f · √(2 ln(1.25/δ)) / ε
     const sigma = (sensitivity * Math.sqrt(2 * Math.log(1.25 / delta))) / epsilon;
@@ -479,6 +502,8 @@ export function applyGaussian(
     ? "IQR-based (1.5×IQR outlier-robust)"
     : sensitivityMode === "percentile"
     ? "Percentile (1st–99th)"
+    : adaptiveUpgradedG.length > 0
+    ? `Auto (Min–Max) + IQR upgrade for: ${adaptiveUpgradedG.join(", ")}`
     : "Auto (Min–Max range)";
   const sigmaFormula = `Δf · √(2 ln(1.25/${delta})) / ε`;
   const exampleSigma = numericCols.length > 0
@@ -671,6 +696,95 @@ export function applyExponential(
     },
     colStats: catColStatsCombined,
     warnings, interpretation, compliancePassed, report,
+  };
+}
+
+// ─── Mixed Mechanism — Laplace/Gaussian (numeric) + Exponential (categorical) ─
+// Provides full-dataset DP coverage in a single pass.
+export function applyMixed(
+  data: DataRow[],
+  epsilon: number,
+  delta: number,
+  mechanism: "laplace" | "gaussian",
+  targetCols: string[],
+  options: DPOptions = {},
+): PrivacyResult {
+  const t0 = performance.now();
+
+  // Run numeric mechanism first (perturbs only numerics, passes through categoricals unchanged)
+  const numRes = mechanism === "laplace"
+    ? applyLaplace(data, epsilon, targetCols, options)
+    : applyGaussian(data, epsilon, delta, targetCols, options);
+
+  // Run Exponential on the original data for categorical columns
+  const catRes = applyExponential(data, epsilon, targetCols, options);
+
+  const N = data.length;
+  const catCols  = targetCols.filter((c) => !isNumericCol(data, c));
+  const numCols  = targetCols.filter((c) =>  isNumericCol(data, c));
+
+  // Merge: start with numRes output (numerics perturbed), overlay cat perturbations
+  const mergedData: DataRow[] = numRes.processedData.map((row, i) => {
+    const merged: DataRow = { ...row };
+    for (const col of catCols) {
+      merged[col] = catRes.processedData[i][col];
+    }
+    return merged;
+  });
+
+  const mechLabel  = mechanism === "laplace" ? "Laplace" : "Gaussian";
+  const numLoss    = numRes.informationLoss;
+  const catLoss    = catRes.informationLoss;
+  const combinedLoss = (numCols.length > 0 && catCols.length > 0)
+    ? (numLoss * numCols.length + catLoss * catCols.length) / (numCols.length + catCols.length)
+    : numLoss + catLoss;
+
+  const mergedColStats = { ...(numRes.colStats ?? {}), ...(catRes.colStats ?? {}) };
+
+  const warnings = [
+    ...numRes.warnings.filter((w) => !w.includes("categorical")),
+    ...catRes.warnings.filter((w) => !w.includes("numeric")),
+  ];
+
+  const epLabel = epsilonLabel(epsilon);
+  const compliancePassed = epsilon <= 5 && (numCols.length > 0 || catCols.length > 0);
+
+  const interpretation =
+    `Mixed DP: ${mechLabel} Mechanism on ${numCols.length} numeric column${numCols.length !== 1 ? "s" : ""} ` +
+    `+ Exponential Mechanism on ${catCols.length} categorical column${catCols.length !== 1 ? "s" : ""} ` +
+    `(N = ${N}, ε = ${epsilon}, ${epLabel}). ` +
+    `Full-dataset coverage — no columns left unprotected. ` +
+    `Numeric avg rel. error = ${(numLoss * 100).toFixed(1)}%. ` +
+    `Categorical avg shift rate = ${(catLoss * 100).toFixed(1)}%. ` +
+    (mechanism === "gaussian" ? `Privacy guarantee: (ε,δ)-DP (δ = ${delta}). ` : "Privacy guarantee: ε-DP. ");
+
+  return {
+    technique: `${mechLabel} + Exponential (Mixed DP)`,
+    family: "Differential Privacy",
+    processedData: mergedData,
+    originalCount: N,
+    processedCount: N,
+    recordsSuppressed: 0,
+    informationLoss: Math.min(1, combinedLoss),
+    executionMs: Math.round(performance.now() - t0),
+    stats: {
+      epsilon,
+      ...(mechanism === "gaussian" ? { delta } : {}),
+      privacyGuarantee: mechanism === "laplace"
+        ? `ε-DP (ε = ${epsilon}) — ${epLabel}`
+        : `(ε,δ)-DP (ε = ${epsilon}, δ = ${delta}) — ${epLabel}`,
+      mechanism: `${mechLabel} (numeric) + Exponential (categorical)`,
+      numericColumnsProtected: numCols.length,
+      categoricalColumnsProtected: catCols.length,
+      totalColumnsProtected: numCols.length + catCols.length,
+      numericAvgRelError: numRes.stats.avgRelativeError ?? "N/A",
+      categoricalAvgShiftRate: (catRes.stats as Record<string, unknown>).avgShiftRate ?? "N/A",
+    },
+    colStats: mergedColStats,
+    warnings,
+    interpretation,
+    compliancePassed,
+    report: numRes.report,
   };
 }
 

@@ -30,7 +30,7 @@ import {
   applyDataShuffling, applyCellSuppression,
 } from "@/lib/privacy/sdc";
 import type { GeneralisationColConfig } from "@/lib/privacy/sdc";
-import { applyLaplace, applyGaussian, applyExponential, epsilonLabel, epsilonBadgeClass, type SensitivityMode } from "@/lib/privacy/dp";
+import { applyLaplace, applyGaussian, applyExponential, applyMixed, epsilonLabel, epsilonBadgeClass, type SensitivityMode } from "@/lib/privacy/dp";
 import { applyStatisticalSDG, applyDPSDG } from "@/lib/privacy/synthetic";
 import { applyHomomorphicEncryption, applySMPC } from "@/lib/privacy/crypto";
 import { applyFederatedLearning } from "@/lib/privacy/federated";
@@ -642,12 +642,13 @@ export default function PrivacyPage() {
   // ── DP parameters ──────────────────────────────────────────────────────────
   const [epsilon,           setEpsilon]           = useState([1.0]);
   const [delta,             setDelta]             = useState([1e-5]);
-  const [dpSensitivityMode, setDpSensitivityMode] = useState<SensitivityMode>("auto");
+  const [dpSensitivityMode, setDpSensitivityMode] = useState<SensitivityMode>("iqr");
   const [dpPostClamp,       setDpPostClamp]       = useState(true);
   const [dpSeedEnabled,     setDpSeedEnabled]     = useState(false);
   const [dpSeed,            setDpSeed]            = useState(42);
   const [dpBudgetMode,      setDpBudgetMode]      = useState<"global"|"equal"|"proportional">("global");
   const [dpCompositionMode, setDpCompositionMode] = useState<"basic"|"advanced"|"renyi">("advanced");
+  const [dpProtectCategorical, setDpProtectCategorical] = useState(true);
 
   // ── SDG parameters ─────────────────────────────────────────────────────────
   const [synthSize,    setSynthSize]    = useState([100]);
@@ -716,7 +717,9 @@ export default function PrivacyPage() {
       const sorted = [...vals].sort((a, b) => a - b);
       const n = sorted.length;
       let lo: number, hi: number;
-      if (dpSensitivityMode === "iqr") {
+      const rawRange = sorted[n - 1] - sorted[0];
+      const useIQR = dpSensitivityMode === "iqr" || (dpSensitivityMode === "auto" && rawRange > 100000);
+      if (useIQR) {
         const q1 = sorted[Math.floor(n * 0.25)]; const q3 = sorted[Math.floor(n * 0.75)];
         const iqr = q3 - q1; lo = q1 - 1.5 * iqr; hi = q3 + 1.5 * iqr;
       } else if (dpSensitivityMode === "percentile") {
@@ -1069,8 +1072,16 @@ export default function PrivacyPage() {
       } else if (family === "dp") {
         const dpOpts = { sensitivityMode: dpSensitivityMode, postClamp: dpPostClamp, seed: dpSeedEnabled ? dpSeed : null };
         switch (dpTech) {
-          case "laplace":     res = applyLaplace(rawData, epsilon[0], cols, dpOpts); break;
-          case "gaussian":    res = applyGaussian(rawData, epsilon[0], delta[0], cols, dpOpts); break;
+          case "laplace":
+            res = (dpProtectCategorical && dpColumnPreview.catCols.length > 0)
+              ? applyMixed(rawData, epsilon[0], 0, "laplace", cols, dpOpts)
+              : applyLaplace(rawData, epsilon[0], cols, dpOpts);
+            break;
+          case "gaussian":
+            res = (dpProtectCategorical && dpColumnPreview.catCols.length > 0)
+              ? applyMixed(rawData, epsilon[0], delta[0], "gaussian", cols, dpOpts)
+              : applyGaussian(rawData, epsilon[0], delta[0], cols, dpOpts);
+            break;
           case "exponential": res = applyExponential(rawData, epsilon[0], cols, dpOpts); break;
           default: throw new Error("Unknown DP technique");
         }
@@ -2047,7 +2058,8 @@ export default function PrivacyPage() {
                         const epsilonOk = epsilon[0] > 0 && epsilon[0] <= 10;
                         const highNoiseCols = numC.filter((c) => c.risk === "high");
                         const highSensCols = numC.filter((c) => c.sensitivity > 100000);
-                        const catUntouched = isLapGau && catC.length > 0;
+                        const catUntouched = isLapGau && catC.length > 0 && !dpProtectCategorical;
+                        const catProtected = isLapGau && catC.length > 0 && dpProtectCategorical;
                         const deltaOk = dpTech !== "gaussian" || delta[0] > 0;
                         const checks: { icon: string; text: string; sub?: string; type: "ok"|"warn"|"info" }[] = [
                           colsOk
@@ -2056,10 +2068,11 @@ export default function PrivacyPage() {
                           epsilonOk
                             ? { icon: "✅", text: `ε = ${epsilon[0].toFixed(1)} — ${epsilonLabel(epsilon[0])}`, type: "ok" }
                             : { icon: "⚠", text: "ε out of valid range (0 < ε ≤ 10)", type: "warn" },
-                          { icon: "✅", text: `Sensitivity: ${dpSensitivityMode === "auto" ? "Auto (Min-Max)" : dpSensitivityMode === "iqr" ? "IQR-based" : "Percentile 1–99%"}`, type: "ok" },
+                          { icon: "✅", text: `Sensitivity: ${dpSensitivityMode === "auto" ? "Auto (Min-Max, adaptive)" : dpSensitivityMode === "iqr" ? "IQR-based" : "Percentile 1–99%"}`, type: "ok" },
                           ...(highNoiseCols.length > 0 ? [{ icon: "⚠", text: `High noise: ${highNoiseCols.slice(0, 2).map((c) => c.col).join(", ")}${highNoiseCols.length > 2 ? " +" + (highNoiseCols.length - 2) + " more" : ""}`, sub: "Noise scale > 10× mean. Try IQR clipping.", type: "warn" as const }] : []),
-                          ...(highSensCols.length > 0 ? [{ icon: "⚠", text: `Range > 100K: ${highSensCols.map((c) => c.col).join(", ")}`, sub: "IQR clipping strongly recommended.", type: "warn" as const }] : []),
-                          ...(catUntouched ? [{ icon: "⚠", text: `${catC.length} categorical col${catC.length !== 1 ? "s" : ""} untouched`, sub: "Switch to Exponential Mechanism to protect them.", type: "warn" as const }] : []),
+                          ...(highSensCols.length > 0 ? [{ icon: "⚠", text: `Range > 100K: ${highSensCols.map((c) => c.col).join(", ")}`, sub: "Auto-mode upgraded to IQR for these columns.", type: "warn" as const }] : []),
+                          ...(catProtected ? [{ icon: "✅", text: `${catC.length} categorical col${catC.length !== 1 ? "s" : ""} protected (Mixed DP)`, sub: "Exponential Mechanism applied alongside " + (dpTech === "laplace" ? "Laplace" : "Gaussian") + ".", type: "ok" as const }] : []),
+                          ...(catUntouched ? [{ icon: "⚠", text: `${catC.length} categorical col${catC.length !== 1 ? "s" : ""} untouched`, sub: "Enable 'Also protect categoricals' toggle to add Exponential Mechanism.", type: "warn" as const }] : []),
                           ...(dpTech === "gaussian" ? [
                             deltaOk
                               ? { icon: "ℹ", text: `δ = ${delta[0]} for (ε,δ)-DP`, type: "info" as const }
@@ -2207,6 +2220,18 @@ export default function PrivacyPage() {
                             </p>
                           </div>
                           <Switch checked={dpPostClamp} onCheckedChange={setDpPostClamp} data-testid="dp-postclamp-toggle" />
+                        </div>
+                      )}
+
+                      {(dpTech === "laplace" || dpTech === "gaussian") && dpColumnPreview.catCols.length > 0 && (
+                        <div className="flex items-center justify-between rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 p-3">
+                          <div>
+                            <Label className="text-sm font-medium">Also protect categorical columns</Label>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              Adds Exponential Mechanism to {dpColumnPreview.catCols.length} categorical col{dpColumnPreview.catCols.length !== 1 ? "s" : ""} in the same pass (Mixed DP).
+                            </p>
+                          </div>
+                          <Switch checked={dpProtectCategorical} onCheckedChange={setDpProtectCategorical} data-testid="dp-protect-categorical-toggle" />
                         </div>
                       )}
 
