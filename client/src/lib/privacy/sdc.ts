@@ -89,8 +89,13 @@ function buildReport(
   metricsHtml: string,
   interpretation: string,
   recommendations: string[],
+  // Explicit override: if provided, this drives the badge instead of sniffing complianceHtml
+  // for "YES". Fixes badge mismatch between in-app (compliancePassed) and HTML report.
+  overallPassed?: boolean,
 ): string {
-  const passed = complianceHtml.includes("YES");
+  // If caller supplies overallPassed, trust it. Otherwise fall back to the legacy
+  // "does the compliance section contain the word YES?" heuristic (kept for backward compat).
+  const passed = overallPassed !== undefined ? overallPassed : complianceHtml.includes("YES");
   const badge = passed
     ? `<span style="background:#16A34A;color:white;padding:4px 12px;border-radius:4px;font-weight:700">PASS</span>`
     : `<span style="background:#DC2626;color:white;padding:4px 12px;border-radius:4px;font-weight:700">FAIL</span>`;
@@ -1300,32 +1305,86 @@ export function applyPRAM(
 
   const avgTVD = effectiveCols.length > 0
     ? mean(effectiveCols.map((c) => parseFloat(String(colStats[c]["TVD"])))) : 0;
-  const compliancePassed = avgTVD < 0.10 &&
-    effectiveCols.every((c) => parseFloat(String(colStats[c]["χ² p-value"])) > 0.05);
 
-  const interp = `PRAM was applied to ${effectiveCols.length} categorical columns with retention probability ${(retentionProb * 100).toFixed(0)}% (${variant} variant). ` +
-    `The mean Total Variation Distance is ${avgTVD.toFixed(4)}, indicating ${avgTVD < 0.10 ? "minimal" : avgTVD < 0.20 ? "moderate" : "high"} distribution shift post-perturbation. ` +
-    `For each record, an adversary who knows the perturbed value has only ${(retentionProb * 100).toFixed(0)}% confidence the original value matches — providing plausible deniability.`;
+  // ── Structured named compliance checks (PRAM) ──────────────────────────────
+  // Check 1 — Execution: did PRAM process at least one column without crashing?
+  const execOk = effectiveCols.length > 0;
+
+  // Check 2 — Statistical: avg TVD < 0.10 AND ≥80% of columns have χ² p > 0.05.
+  // Rationale for 80% rule: with many columns (e.g. 28) a strict "all must pass"
+  // causes legitimate runs to fail because one borderline column flips the whole verdict.
+  // Relaxed rule: report how many columns fail and which ones, without blocking PASS.
+  const chi2PassCols  = effectiveCols.filter((c) => parseFloat(String(colStats[c]["χ² p-value"])) > 0.05);
+  const chi2FailCols  = effectiveCols.filter((c) => parseFloat(String(colStats[c]["χ² p-value"])) <= 0.05);
+  const chi2PassRate  = effectiveCols.length > 0 ? chi2PassCols.length / effectiveCols.length : 1;
+  const tvdOk         = avgTVD < 0.10;
+  const chi2Ok        = chi2PassRate >= 0.80;        // ≥80% columns pass
+  const statsOk       = tvdOk && chi2Ok;
+
+  // Check 3 — Policy: retention probability is in the recommended range (0.70–0.95)
+  const policyOk      = retentionProb >= 0.70 && retentionProb <= 0.95;
+
+  // Overall: PASS requires execution + statistical. Policy is advisory only.
+  const compliancePassed = execOk && statsOk;
+
+  const interp =
+    `PRAM applied to ${effectiveCols.length} categorical column${effectiveCols.length !== 1 ? "s" : ""} ` +
+    `with retention probability ${(retentionProb * 100).toFixed(0)}% (${variant} variant). ` +
+    `Mean TVD = ${avgTVD.toFixed(4)} — ${avgTVD < 0.10 ? "minimal" : avgTVD < 0.20 ? "moderate" : "high"} distribution shift. ` +
+    `χ² distributional test: ${chi2PassCols.length} of ${effectiveCols.length} columns pass (p > 0.05). ` +
+    (chi2FailCols.length > 0
+      ? `Columns with significant shift: ${chi2FailCols.slice(0, 5).join(", ")}${chi2FailCols.length > 5 ? "…" : ""}. `
+      : "") +
+    `For each record, an adversary knowing the perturbed value has only ${(retentionProb * 100).toFixed(0)}% confidence ` +
+    `the original matches — providing plausible deniability.`;
 
   const warnings: string[] = [
-    ...(effectiveCols.length === 0 ? ["No categorical columns found. PRAM primarily applies to categorical attributes."] : []),
-    ...(avgTVD > 0.20 ? [`Distribution has shifted significantly (avg TVD=${avgTVD.toFixed(3)}). Switch to Unbiased PRAM variant.`] : []),
+    ...(effectiveCols.length === 0
+      ? ["No categorical columns found. PRAM primarily applies to categorical attributes."]
+      : []),
+    ...(avgTVD > 0.20
+      ? [`Distribution has shifted significantly (avg TVD=${avgTVD.toFixed(3)}). Consider switching to Unbiased PRAM variant.`]
+      : []),
+    ...(chi2FailCols.length > 0
+      ? [`${chi2FailCols.length} column${chi2FailCols.length > 1 ? "s" : ""} show significant distributional shift ` +
+         `(χ² p ≤ 0.05): ${chi2FailCols.slice(0, 5).join(", ")}${chi2FailCols.length > 5 ? "…" : ""}. ` +
+         `Increase retention probability or switch to Unbiased PRAM.`]
+      : []),
+    ...(!policyOk
+      ? [`Retention probability ${(retentionProb * 100).toFixed(0)}% is outside the recommended 70–95% range.`]
+      : []),
   ];
 
   const colTable = effectiveCols.map((c) =>
     htmlRow(c, `Retention=${colStats[c]["Actual Retention"]}  TVD=${colStats[c]["TVD"]}  χ²-p=${colStats[c]["χ² p-value"]}`)
   ).join("");
 
+  // Structured compliance section for the report (Issue: badge mismatch)
+  const complianceSectionHtml =
+    htmlRow("① Execution Check — columns processed", execOk ? `${effectiveCols.length} columns — PASS` : "0 columns — FAIL", execOk) +
+    htmlRow("② Statistical Check — Avg TVD < 0.10", tvdOk ? `${avgTVD.toFixed(4)} — PASS` : `${avgTVD.toFixed(4)} — FAIL`, tvdOk) +
+    htmlRow("③ Statistical Check — χ² ≥80% cols pass", chi2Ok
+      ? `${chi2PassCols.length}/${effectiveCols.length} columns — PASS`
+      : `${chi2PassCols.length}/${effectiveCols.length} columns — FAIL (${chi2FailCols.slice(0,3).join(", ")}…)`, chi2Ok) +
+    htmlRow("④ Policy Check — p_ret in [70%, 95%]", policyOk
+      ? `${(retentionProb * 100).toFixed(0)}% — PASS`
+      : `${(retentionProb * 100).toFixed(0)}% — WARNING (advisory only)`, policyOk ? true : null) +
+    htmlRow("Overall Compliance", compliancePassed ? "PASS" : "FAIL", compliancePassed);
+
   const now = new Date().toLocaleString("en-IN");
+  // Issue fix: pass compliancePassed as overallPassed to buildReport so the HTML badge
+  // matches the in-app badge (instead of relying on "YES" string sniffing).
   const report = buildReport(
-    "PRAM", "dataset", now, N, N,
+    "PRAM (Post Randomisation Method)", "dataset", now, N, N,
     htmlRow("Retention Probability", `${(retentionProb * 100).toFixed(0)}% (keep) / ${((1-retentionProb)*100).toFixed(0)}% (change)`) +
-    htmlRow("PRAM Variant", variant) + htmlRow("Target Columns", effectiveCols.join(", ")) + htmlRow("Random Seed", seed),
-    htmlRow("Avg TVD", avgTVD.toFixed(4), avgTVD < 0.10) +
-    htmlRow("Distributional Similarity", compliancePassed ? "CONFIRMED (χ² p > 0.05)" : "REJECTED", compliancePassed),
+    htmlRow("PRAM Variant", variant) +
+    htmlRow("Categorical Columns", effectiveCols.length) +
+    htmlRow("Random Seed", seed),
+    complianceSectionHtml,
     colTable,
     interp,
     warnings,
+    compliancePassed,   // ← overallPassed: fixes badge mismatch
   );
 
   return {
@@ -1340,6 +1399,12 @@ export function applyPRAM(
       variant,
       categoricalColsPerturbed: effectiveCols.length,
       avgTVD: avgTVD.toFixed(4),
+      // Structured check results exposed in stats for dashboard display
+      check_Execution:   execOk   ? "PASS" : "FAIL",
+      check_TVD:         tvdOk    ? "PASS" : "FAIL",
+      check_Chi2:        chi2Ok   ? `PASS (${chi2PassCols.length}/${effectiveCols.length})` : `FAIL (${chi2PassCols.length}/${effectiveCols.length})`,
+      check_Policy:      policyOk ? "PASS" : "WARNING",
+      chi2FailingCols:   chi2FailCols.length > 0 ? chi2FailCols.slice(0, 5).join(", ") : null,
       transitionMatrix: `M[i,i]=${retentionProb}, M[i,j]=${((1 - retentionProb) / Math.max(2, 1)).toFixed(3)} (off-diagonal)`,
     },
     colStats,
@@ -1428,11 +1493,14 @@ export function applyTopBottomCoding(
     };
   });
 
-  const totalAffected = numericCols.reduce((s, c) => {
+  // Issue 13 fix: totalCapped counts only capping events (not noise-affected rows).
+  // Noise is applied to ALL N records per column — clarified separately.
+  const totalCapped = numericCols.reduce((s, c) => {
     const bCap = parseInt(String(colStats[c]["Bot Capped"]).split(" ")[0]);
     const tCap = parseInt(String(colStats[c]["Top Capped"]).split(" ")[0]);
     return s + bCap + tCap;
   }, 0);
+  const noiseAffectedRows = addNoise ? N * numericCols.length : 0;
 
   const maxCappingCol = numericCols.length > 0
     ? numericCols.reduce((best, c) => {
@@ -1446,38 +1514,67 @@ export function applyTopBottomCoding(
 
   const avgMeanShift = numericCols.length > 0
     ? mean(numericCols.map((c) => parseFloat(String(colStats[c]["Mean Shift"])))) : 0;
+  const avgStdShift  = numericCols.length > 0
+    ? mean(numericCols.map((c) => parseFloat(String(colStats[c]["Std Dev Shift"] ?? "0")))) : 0;
+
+  // Issue 12 fix: compliance is mean shift < 5% AND at least one column processed.
+  // Will be passed to buildReport as overallPassed so the HTML badge matches the dashboard.
   const compliancePassed = avgMeanShift < 5 && numericCols.length > 0;
 
-  const interp = `Top/Bottom coding was applied to ${numericCols.length} columns. ` +
-    `Values above the ${topPercentile}th percentile and below the ${bottomPercentile}th percentile were capped. ` +
-    `A total of ${totalAffected} record-column instances were capped across all columns. ` +
-    (addNoise ? `Gaussian noise with λ=${noiseLambda} was added after capping (σ_noise = λ × col_std per column). ` : "No noise was added. ") +
-    `This prevents re-identification via extreme values, which are often unique to specific individuals in survey microdata.`;
+  // Issue 13 fix: interpretation now clearly separates capping count from noise scope.
+  const interp =
+    `Top/Bottom coding applied to ${numericCols.length} column${numericCols.length !== 1 ? "s" : ""}. ` +
+    `Values above the ${topPercentile}th percentile or below the ${bottomPercentile}th were replaced by the cap value. ` +
+    `Capping events: ${totalCapped} record-column instances across all columns ` +
+    `(this is the count of values that exceeded a cap boundary — NOT noise-affected rows). ` +
+    (addNoise
+      ? `Gaussian noise (λ=${noiseLambda}, σ_noise = λ × col_std) was then applied to every value in all ` +
+        `${numericCols.length} column(s) — i.e. ${noiseAffectedRows.toLocaleString()} record-column values received noise. `
+      : `No Gaussian noise was added. `) +
+    `Mean shift avg = ${avgMeanShift.toFixed(2)}% — utility is ${avgMeanShift < 5 ? "well preserved" : "moderately impacted"}.`;
 
   const warnings: string[] = [
     ...(numericCols.length === 0 ? ["No numeric target columns selected."] : []),
     ...(avgMeanShift > 5 ? [`Significant mean shift detected (avg ${avgMeanShift.toFixed(1)}%). Consider widening the percentile range.`] : []),
     ...(maxCappingCol && parseFloat(String(colStats[maxCappingCol]["Top Capped"]).match(/\((.+)%\)/)?.[1] ?? "0") > 20
       ? [`Over 20% of records capped in "${maxCappingCol}". Increase top percentile or decrease bottom percentile.`] : []),
-    ...(addNoise && noiseLambda > 0.3 ? [`Noise λ=${noiseLambda} is high — consider reducing it below 0.3.`] : []),
+    ...(addNoise && noiseLambda > 0.3 ? [`Noise λ=${noiseLambda} is high — consider reducing to < 0.3.`] : []),
   ];
 
-  const colTable = numericCols.map((c) =>
-    htmlRow(c, `[${colStats[c]["q_bot"]}, ${colStats[c]["q_top"]}]  bot=${colStats[c]["Bot Capped"]}  top=${colStats[c]["Top Capped"]}  mean-shift=${colStats[c]["Mean Shift"]}`)
-  ).join("");
+  // Issue 14 fix: colTable now includes Std Dev Shift and σ_noise (previously missing from HTML report).
+  const colTable = numericCols.map((c) => {
+    const sigmaNote = colStats[c]["σ_noise"] !== undefined ? `  σ_noise=${colStats[c]["σ_noise"]}` : "";
+    return (
+      htmlRow(c,
+        `cap=[${colStats[c]["q_bot"]}, ${colStats[c]["q_top"]}]` +
+        `  bot=${colStats[c]["Bot Capped"]}  top=${colStats[c]["Top Capped"]}` +
+        `  mean-shift=${colStats[c]["Mean Shift"]}  std-shift=${colStats[c]["Std Dev Shift"]}${sigmaNote}`)
+    );
+  }).join("");
 
   const now = new Date().toLocaleString("en-IN");
+  // Issue 12 fix: pass compliancePassed as overallPassed to buildReport — ensures
+  // the HTML report badge always matches the in-app dashboard badge.
   const report = buildReport(
-    "Top/Bottom Coding", "dataset", now, N, N,
+    "Top/Bottom Coding (Percentile Capping)", "dataset", now, N, N,
     htmlRow("Top Percentile Cap", `${topPercentile}th percentile`) +
     htmlRow("Bottom Percentile Cap", `${bottomPercentile}th percentile`) +
     htmlRow("Gaussian Noise", addNoise ? `ENABLED (λ=${noiseLambda})` : "DISABLED") +
     htmlRow("Target Columns", numericCols.join(", ")),
-    htmlRow("Total Records Affected", `${totalAffected} instances`, totalAffected < N * 0.2 * numericCols.length) +
-    htmlRow("Avg Mean Shift", `${avgMeanShift.toFixed(2)}%`, avgMeanShift < 5),
+    // Compliance section — clearly labeled so badge logic doesn't rely on text sniffing
+    htmlRow("Compliance — Avg Mean Shift < 5%", avgMeanShift < 5
+      ? `${avgMeanShift.toFixed(2)}% — PASS` : `${avgMeanShift.toFixed(2)}% — FAIL`, avgMeanShift < 5) +
+    htmlRow("Compliance — Columns Processed", numericCols.length > 0
+      ? `${numericCols.length} — PASS` : "0 — FAIL", numericCols.length > 0),
+    // Issue 13: split capping vs noise rows; Issue 14: add std-shift and sigma
+    htmlRow("Records Capped (cap boundary exceeded)", `${totalCapped} record-column instances`, totalCapped < N * 0.2 * numericCols.length) +
+    (addNoise ? htmlRow("Records with Noise (all rows × cols)", `${noiseAffectedRows.toLocaleString()} record-column values`) : "") +
+    htmlRow("Avg Mean Shift", `${avgMeanShift.toFixed(2)}%`, avgMeanShift < 5) +
+    htmlRow("Avg Std Dev Shift", `${avgStdShift.toFixed(2)}%`),
     colTable,
     interp,
     warnings,
+    compliancePassed,   // ← overallPassed: fixes Issue 12 badge mismatch
   );
 
   return {
@@ -1490,8 +1587,11 @@ export function applyTopBottomCoding(
       topPercentile: `${topPercentile}th`,
       bottomPercentile: `${bottomPercentile}th`,
       gaussianNoise: addNoise ? `ENABLED (λ=${noiseLambda})` : "DISABLED",
-      totalAffectedInstances: totalAffected,
+      // Issue 13 fix: separate capping count from noise scope in stats
+      totalCappedInstances: totalCapped,
+      noiseAffectedInstances: addNoise ? `${noiseAffectedRows.toLocaleString()} (all rows × ${numericCols.length} col${numericCols.length !== 1 ? "s" : ""})` : "N/A",
       avgMeanShift: `${avgMeanShift.toFixed(2)}%`,
+      avgStdDevShift: `${avgStdShift.toFixed(2)}%`,
       columnsProcessed: numericCols.length,
     },
     colStats,
