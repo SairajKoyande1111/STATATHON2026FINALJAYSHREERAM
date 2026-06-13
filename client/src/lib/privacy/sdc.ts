@@ -1896,17 +1896,47 @@ export function applyExplicitSuppression(
   // Issue 16 fix: interpretation now discloses rawCandidateCount and whether cap triggered.
   const budgetNote = (mode === "row" || mode === "both")
     ? (budgetCapTriggered
-        ? `Budget cap TRIGGERED: ${rawCandidateCount} rows met the criterion but only ${maxSuppress} (${(suppressionBudgetPct*100).toFixed(0)}% budget) were suppressed — ${rawCandidateCount - rowsSuppressed} rows were spared by the cap. `
-        : `Budget cap NOT triggered: all ${rawCandidateCount} qualifying rows fit within the ${(suppressionBudgetPct*100).toFixed(0)}% budget (${maxSuppress} max). Utilisation = ${(budgetUsed*100).toFixed(1)}% is not a coincidence — it equals 100% only if candidates = budget cap exactly. `)
+        ? `Budget cap TRIGGERED: ${rawCandidateCount} rows qualified but only ${maxSuppress} (${(suppressionBudgetPct*100).toFixed(0)}% budget) were suppressed — ${rawCandidateCount - rowsSuppressed} rows were spared by the cap. `
+        : `Budget cap NOT triggered: all ${rawCandidateCount} qualifying rows fit within the ${(suppressionBudgetPct*100).toFixed(0)}% budget (max=${maxSuppress}). `)
     : "";
+
+  // Issue 18 fix: criterion-specific row suppression description.
+  // Previous code always rendered uniqueness language for all criteria (bug introduced in prior edit).
+  const rowCriterionDesc = (() => {
+    if (mode === "cell") return "";
+    const suppCount = `${rowsSuppressed} row${rowsSuppressed !== 1 ? "s" : ""} (${(rowSuppRate*100).toFixed(1)}%) suppressed. `;
+    switch (criterion) {
+      case "uniqueness":
+        return `Row suppression — UNIQUENESS criterion: records whose QI combination ` +
+          `[${qiColsUsed.join(", ")}] forms a group of fewer than ${params.minGroupSize ?? 2} ` +
+          `individuals in the dataset are considered re-identifiable and removed. ` +
+          suppCount + budgetNote;
+      case "outlier":
+        return `Row suppression — OUTLIER criterion: records where any target column's ` +
+          `value satisfies |z-score| > ${params.zThreshold ?? 3.0} (i.e. the value lies more than ` +
+          `${params.zThreshold ?? 3.0} standard deviations from the column mean) are flagged as ` +
+          `statistical outliers and suppressed. Columns checked: ${(params.targetCols ?? []).join(", ") || "all numeric"}. ` +
+          suppCount + budgetNote;
+      case "sensitive_value":
+        return `Row suppression — SENSITIVE VALUE criterion: records where the sensitive ` +
+          `attribute column "${params.saCol || "(none set)"}" contains a value in the risk list ` +
+          `[${(params.riskValues ?? []).join(", ") || "(empty)"}] are suppressed to prevent ` +
+          `disclosure of high-risk sensitive attribute values. ` +
+          suppCount + budgetNote;
+      case "threshold":
+        return `Row suppression — THRESHOLD criterion: records where the target column ` +
+          `"${(params.targetCols ?? [])[0] || "(none)"}" has a value outside the allowed range ` +
+          `[${params.lowerBound ?? "−∞"}, ${params.upperBound ?? "+∞"}] (i.e. value < ${params.lowerBound ?? "−∞"} ` +
+          `OR value > ${params.upperBound ?? "+∞"}) are suppressed as threshold violations. ` +
+          suppCount + budgetNote;
+      default:
+        return suppCount + budgetNote;
+    }
+  })();
 
   const interp =
     `Explicit suppression — mode: "${mode}", criterion: "${criterion}". ` +
-    (mode !== "cell"
-      ? `Row suppression (criterion: ${criterion}): groups in the QI space [${qiColsUsed.join(", ")}] ` +
-        `with fewer than ${params.minGroupSize ?? 2} members are considered unique/risky and the rows are removed. ` +
-        `${rowsSuppressed} rows (${(rowSuppRate*100).toFixed(1)}%) suppressed. ${budgetNote}`
-      : "") +
+    rowCriterionDesc +
     (mode !== "row"
       ? `Cell suppression: individual cell values appearing fewer than ${params.minCellFrequency ?? 3} times ` +
         `in their column are replaced with "***" (the cell value is masked — the row is kept). ` +
@@ -1920,18 +1950,31 @@ export function applyExplicitSuppression(
       ? [`Row suppression ${(rowSuppRate*100).toFixed(1)}% exceeds budget ${(suppressionBudgetPct*100).toFixed(0)}%.`]
       : []),
     ...(rowsSuppressed === 0 && (mode === "row" || mode === "both")
-      ? ["No rows matched the suppression criterion."]
+      ? [`No rows matched the "${criterion}" suppression criterion.`]
       : []),
     ...(cellsSuppressed === 0 && (mode === "cell" || mode === "both")
-      ? ["No cells matched the frequency threshold — all cell values appear ≥ minCellFrequency times."]
+      ? ["No cells masked — all cell values appear ≥ minCellFrequency times in their columns."]
       : []),
     // Issue 16 fix: flag coincidental 100% utilisation
     ...(!budgetCapTriggered && budgetUsed >= 0.99 && rowsSuppressed > 0
-      ? [`Budget utilisation = 100% is coincidental — all ${rawCandidateCount} qualifying rows happened to exactly match the ${maxSuppress}-row cap. Cap was NOT triggered.`]
+      ? [`Budget utilisation = 100% is coincidental — all ${rawCandidateCount} qualifying rows exactly fit the ${maxSuppress}-row cap. Cap was NOT triggered.`]
       : []),
     // Issue 17 fix: warn about single-column QI for uniqueness
     ...(singleQIUniqueness
-      ? [`Single-column QI ("${qiColsUsed[0]}") makes uniqueness test too narrow — many rows may share the same single value, masking true individual uniqueness. Re-run with a multi-column QI set (e.g. State + Age + Gender) to test meaningful combinations, as done in K-Anonymity/T-Closeness.`]
+      ? [`Single-column QI ("${qiColsUsed[0]}") makes uniqueness too narrow — re-run with a multi-column QI set (e.g. State + Age + Gender) as done in K-Anonymity/T-Closeness.`]
+      : []),
+    // Issue 18 fix: pre-flight parameter guards for zero-result criteria
+    ...(criterion === "sensitive_value" && !params.saCol
+      ? [`SENSITIVE VALUE: no SA column selected — set "Sensitive Attr" in the column configuration to identify which column to check.`]
+      : []),
+    ...(criterion === "sensitive_value" && params.saCol && (params.riskValues ?? []).length === 0
+      ? [`SENSITIVE VALUE: Risk Values list is empty — enter comma-separated values present in "${params.saCol}" (e.g. "Islam, Scheduled Tribe (ST)") to flag matching rows.`]
+      : []),
+    ...(criterion === "threshold" && params.lowerBound === undefined && params.upperBound === undefined
+      ? [`THRESHOLD: no bounds set — with lo=−∞ and hi=+∞ every value is in-range, so 0 rows will be suppressed. Set at least one bound (e.g. Lower=3, Upper=8 for HH_Size).`]
+      : []),
+    ...(criterion === "outlier" && (params.zThreshold ?? 3.0) >= 3.0
+      ? [`OUTLIER: z-threshold=${(params.zThreshold ?? 3.0).toFixed(1)} is strict — on small or clean datasets this may yield 0 outliers. Try lowering to 1.5–2.0 to flag moderate extremes.`]
       : []),
   ];
 

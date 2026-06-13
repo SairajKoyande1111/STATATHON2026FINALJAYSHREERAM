@@ -1,0 +1,51 @@
+```
+TECHNIQUE: Explicit Suppression — Criterion selector (Outlier, Sensitive
+Value, Threshold)
+
+ISSUE 18: Outlier, Sensitive Value, and Threshold criteria all produce
+identical interpretation text describing "uniqueness" (group size < min),
+not their own stated logic (z-score, SA-in-risk-list, bounds-violation
+respectively). All three runs returned 0 candidates/0 suppressed with the
+same boilerplate, and "Cells Suppressed: 2 in HH_Size" is identical across
+all 4 criteria including the earlier Uniqueness test. Suggests the
+criterion dropdown only swaps displayed parameter fields (Bounds/Risk
+Values/Z Threshold) without wiring those parameters into distinct
+suppression logic — the underlying check always runs uniqueness regardless
+of selection.
+
+ACTION REQUIRED: For each criterion, set parameters that SHOULD produce
+non-zero candidates, run, and verify the interpretation text/logic actually
+matches the selected criterion (not just uniqueness boilerplate) and that
+the resulting suppressed rows are genuinely explainable by that criterion's
+rule — not coincidentally zero.
+
+- THRESHOLD: set Bounds to a range that excludes real values for a numeric
+  QI/target (e.g. HH_Size bounds = [3, 8] when data ranges 1-12). Verify:
+  (a) rows with HH_Size outside [3,8] are flagged/suppressed, (b)
+  interpretation text says "out of bounds" / threshold violation, not group
+  size < min, (c) suppressed row count is plausible given how many records
+  actually fall outside [3,8].
+
+- SENSITIVE VALUE: populate "Risk Values" with an actual value present in
+  the Sensitive Attribute column (e.g. Religion = "Islam" or
+  Social_Group = "Scheduled Tribe (ST)"). Verify: (a) rows where SA matches
+  a risk value are suppressed, (b) interpretation text says "SA ∈ risk
+  list", (c) suppressed count roughly matches the known frequency of that
+  value in the dataset.
+
+- OUTLIER: lower Z Threshold to ~1.5–2 on a numeric column with real spread
+  (e.g. HH_Size or Land_Owned). Verify: (a) interpretation text says
+  "|z-score| > threshold", (b) suppressed rows correspond to records with
+  genuinely extreme values for that column, (c) suppressed count changes
+  meaningfully as Z Threshold is raised/lowered (e.g. z=1.5 should suppress
+  more than z=3).
+
+- UNIQUENESS (re-verify as control): re-run with the SAME QI set and Min
+  Group Size as one of the above tests, confirm it STILL produces the
+  group-size-based result — this confirms uniqueness itself still works and
+  isolates whether the bug is specific to the other three criteria.
+
+If, after setting meaningful parameters, any criterion still returns 0
+candidates with the generic "group size < min" interpretation text, that
+confirms the criterion-specific logic is unimplemented for that mode.
+```
