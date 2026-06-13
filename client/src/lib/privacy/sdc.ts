@@ -1555,26 +1555,33 @@ export function applyTopBottomCoding(
   const now = new Date().toLocaleString("en-IN");
   // Issue 12 fix: pass compliancePassed as overallPassed to buildReport — ensures
   // the HTML report badge always matches the in-app dashboard badge.
+  // buildReport signature: (title, dataset, ts, N, Nout, paramsHtml, complianceHtml, metricsHtml, interpretation, recommendations, overallPassed?)
+  // Issue 12 fix: pass compliancePassed as overallPassed (arg 11) so the HTML badge matches the dashboard.
+  // Issue 13/14 fix: summary stats + colTable merged into metricsHtml (arg 8), correct arg positions.
   const report = buildReport(
     "Top/Bottom Coding (Percentile Capping)", "dataset", now, N, N,
+    /* paramsHtml (6) */
     htmlRow("Top Percentile Cap", `${topPercentile}th percentile`) +
     htmlRow("Bottom Percentile Cap", `${bottomPercentile}th percentile`) +
     htmlRow("Gaussian Noise", addNoise ? `ENABLED (λ=${noiseLambda})` : "DISABLED") +
     htmlRow("Target Columns", numericCols.join(", ")),
-    // Compliance section — clearly labeled so badge logic doesn't rely on text sniffing
-    htmlRow("Compliance — Avg Mean Shift < 5%", avgMeanShift < 5
+    /* complianceHtml (7) — clearly labeled compliance checks */
+    htmlRow("① Mean Shift < 5%", avgMeanShift < 5
       ? `${avgMeanShift.toFixed(2)}% — PASS` : `${avgMeanShift.toFixed(2)}% — FAIL`, avgMeanShift < 5) +
-    htmlRow("Compliance — Columns Processed", numericCols.length > 0
+    htmlRow("② Columns Processed", numericCols.length > 0
       ? `${numericCols.length} — PASS` : "0 — FAIL", numericCols.length > 0),
-    // Issue 13: split capping vs noise rows; Issue 14: add std-shift and sigma
-    htmlRow("Records Capped (cap boundary exceeded)", `${totalCapped} record-column instances`, totalCapped < N * 0.2 * numericCols.length) +
+    /* metricsHtml (8) — summary stats + per-column detail table (Issues 13 & 14) */
+    htmlRow("Records Capped (cap boundary only)", `${totalCapped} record-column instances`, totalCapped < N * 0.2 * numericCols.length) +
     (addNoise ? htmlRow("Records with Noise (all rows × cols)", `${noiseAffectedRows.toLocaleString()} record-column values`) : "") +
     htmlRow("Avg Mean Shift", `${avgMeanShift.toFixed(2)}%`, avgMeanShift < 5) +
-    htmlRow("Avg Std Dev Shift", `${avgStdShift.toFixed(2)}%`),
+    htmlRow("Avg Std Dev Shift", `${avgStdShift.toFixed(2)}%`) +
     colTable,
+    /* interpretation (9) */
     interp,
+    /* recommendations (10) */
     warnings,
-    compliancePassed,   // ← overallPassed: fixes Issue 12 badge mismatch
+    /* overallPassed (11) */
+    compliancePassed,
   );
 
   return {
