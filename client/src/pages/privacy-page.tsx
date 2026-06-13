@@ -582,6 +582,7 @@ export default function PrivacyPage() {
   // ── SDC parameters ─────────────────────────────────────────────────────────
   const [kVal,         setKVal]         = useState([5]);
   const [suppLimit,    setSuppLimit]    = useState([5]);
+  const [genMethod,    setGenMethod]    = useState<"midpoint"|"range">("range");
   const [lVal,         setLVal]         = useState([3]);
   const [lMethod,      setLMethod]      = useState<"entropy"|"distinct"|"recursive">("entropy");
   const [lKBase,       setLKBase]       = useState([3]);
@@ -955,7 +956,7 @@ export default function PrivacyPage() {
       if (family === "sdc") {
         switch (sdcTech) {
           case "k-anonymity":
-            res = applyKAnonymity(rawData, quasiIdentifiers, kVal[0], suppLimit[0] / 100);
+            res = applyKAnonymity(rawData, quasiIdentifiers, kVal[0], suppLimit[0] / 100, genMethod);
             break;
           case "l-diversity":
             res = applyLDiversity(rawData, quasiIdentifiers, sensitiveAttr, lVal[0], lMethod, lKBase[0], cRecursive[0]);
@@ -1355,15 +1356,19 @@ export default function PrivacyPage() {
                           suggested={autoSuggestions.suppLimit !== undefined ? `Suggested ${autoSuggestions.suppLimit}%` : undefined} />
                         <div className="space-y-2">
                           <Label className="text-sm">Generalisation Method</Label>
-                          <RadioGroup defaultValue="midpoint" className="flex gap-4">
+                          <RadioGroup value={genMethod} onValueChange={(v) => setGenMethod(v as "midpoint" | "range")} className="flex gap-4">
                             {[["midpoint","Midpoint"],["range","Range"]].map(([v, label]) => (
                               <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`gm-${v}`} />
+                                <RadioGroupItem value={v} id={`gm-${v}`} data-testid={`radio-genmethod-${v}`} />
                                 <label htmlFor={`gm-${v}`} className="text-xs cursor-pointer">{label}</label>
                               </div>
                             ))}
                           </RadioGroup>
-                          <p className="text-xs text-muted-foreground">Midpoint: replace partition with centre value. Range: replace with [min, max] string.</p>
+                          <p className="text-xs text-muted-foreground">
+                            {genMethod === "midpoint"
+                              ? "Numeric → (min+max)/2 · Categorical → most common value per partition"
+                              : "Numeric → [min–max] interval · Categorical → {all distinct values}"}
+                          </p>
                         </div>
                       </>)}
 

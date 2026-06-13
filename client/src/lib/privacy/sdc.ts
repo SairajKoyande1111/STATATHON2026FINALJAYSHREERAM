@@ -151,7 +151,6 @@ function mondrianPartition(data: DataRow[], qis: string[], k: number): Partition
   if (data.length === 0 || qis.length === 0) return [];
   const globalRanges = new Map<string, number>();
   qis.forEach((c) => globalRanges.set(c, columnRange(data, c)));
-  // Pre-compute global distinct counts for categorical columns
   const globalDistinctCounts = new Map<string, number>();
   qis.forEach((c) => {
     if (!isNumericCol(data, c)) {
@@ -159,48 +158,72 @@ function mondrianPartition(data: DataRow[], qis: string[], k: number): Partition
     }
   });
 
-  function split(partition: Partition): Partition[] {
-    const { indices } = partition;
-    if (indices.length < 2 * k) return [partition];
-
-    let bestCol = qis[0], bestScore = -1, bestIsNumeric = false;
-    for (const col of qis) {
-      if (isNumericCol(data, col)) {
-        const vals = indices.map((i) => Number(data[i][col])).filter((v) => !isNaN(v));
-        if (vals.length < 2) continue;
-        const rng = (Math.max(...vals) - Math.min(...vals)) / Math.max(globalRanges.get(col) || 1, 1);
-        if (rng > bestScore) { bestScore = rng; bestCol = col; bestIsNumeric = true; }
-      } else {
-        // Categorical: score = normalised within-partition diversity
-        const globalD = Math.max(globalDistinctCounts.get(col) || 1, 2);
-        const partD = new Set(indices.map((i) => String(data[i][col]))).size;
-        const score = (partD - 1) / (globalD - 1);
-        if (score > bestScore) { bestScore = score; bestCol = col; bestIsNumeric = false; }
-      }
-    }
-    if (bestScore <= 0) return [partition];
-
-    if (bestIsNumeric) {
-      const vals = indices.map((i) => Number(data[i][bestCol])).filter((v) => !isNaN(v));
-      const mid = medianValue(vals);
-      const left: number[] = [], right: number[] = [];
-      indices.forEach((i) => {
-        const v = Number(data[i][bestCol]);
-        (isNaN(v) || v <= mid ? left : right).push(i);
-      });
-      if (left.length < k || right.length < k) return [partition];
-      return [...split({ indices: left }), ...split({ indices: right })];
+  // Score a column: higher = better candidate for splitting
+  function scoreCol(col: string, indices: number[]): number {
+    if (isNumericCol(data, col)) {
+      const vals = indices.map((i) => Number(data[i][col])).filter((v) => !isNaN(v));
+      if (vals.length < 2) return -1;
+      const gRange = Math.max(globalRanges.get(col) || 1, 1);
+      return (Math.max(...vals) - Math.min(...vals)) / gRange;
     } else {
-      // Categorical split: sort distinct values alphabetically, assign first half left
-      const distinctVals = Array.from(new Set(indices.map((i) => String(data[i][bestCol])))).sort();
-      const midIdx = Math.max(1, Math.floor(distinctVals.length / 2));
-      const leftSet = new Set(distinctVals.slice(0, midIdx));
-      const left: number[] = [], right: number[] = [];
-      indices.forEach((i) => (leftSet.has(String(data[i][bestCol])) ? left : right).push(i));
-      if (left.length < k || right.length < k) return [partition];
-      return [...split({ indices: left }), ...split({ indices: right })];
+      const globalD = Math.max(globalDistinctCounts.get(col) || 1, 2);
+      const partD = new Set(indices.map((i) => String(data[i][col]))).size;
+      if (partD < 2) return -1;
+      return (partD - 1) / (globalD - 1);
     }
   }
+
+  // Numeric split at median — returns [left, right] if both ≥ k, else null
+  function trySplitNumeric(col: string, indices: number[]): [number[], number[]] | null {
+    const vals = indices.map((i) => Number(data[i][col])).filter((v) => !isNaN(v));
+    const mid = medianValue(vals);
+    const left: number[] = [], right: number[] = [];
+    indices.forEach((i) => {
+      const v = Number(data[i][col]);
+      (isNaN(v) || v <= mid ? left : right).push(i);
+    });
+    if (left.length < k || right.length < k) return null;
+    return [left, right];
+  }
+
+  // Categorical split: try every possible split point and pick the most balanced one
+  function trySplitCategorical(col: string, indices: number[]): [number[], number[]] | null {
+    const distinct = Array.from(new Set(indices.map((i) => String(data[i][col])))).sort();
+    if (distinct.length < 2) return null;
+    let bestLeft: number[] | null = null, bestRight: number[] | null = null, bestBalance = -1;
+    for (let splitAt = 1; splitAt < distinct.length; splitAt++) {
+      const leftSet = new Set(distinct.slice(0, splitAt));
+      const left: number[] = [], right: number[] = [];
+      indices.forEach((i) => (leftSet.has(String(data[i][col])) ? left : right).push(i));
+      if (left.length >= k && right.length >= k) {
+        const balance = Math.min(left.length, right.length) / Math.max(left.length, right.length);
+        if (balance > bestBalance) { bestBalance = balance; bestLeft = left; bestRight = right; }
+      }
+    }
+    if (bestLeft && bestRight) return [bestLeft, bestRight];
+    return null;
+  }
+
+  function split(partition: Partition): Partition[] {
+    const { indices } = partition;
+    // Sort columns by descending score and try each in turn
+    const ranked = qis
+      .map((col) => ({ col, score: scoreCol(col, indices) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    for (const { col } of ranked) {
+      const result = isNumericCol(data, col)
+        ? trySplitNumeric(col, indices)
+        : trySplitCategorical(col, indices);
+      if (result) {
+        const [left, right] = result;
+        return [...split({ indices: left }), ...split({ indices: right })];
+      }
+    }
+    return [partition]; // No valid split found on any column
+  }
+
   return split({ indices: data.map((_, i) => i) });
 }
 
@@ -215,6 +238,7 @@ export function applyKAnonymity(
   qis: string[],
   k: number,
   suppressionLimit: number, // 0–1
+  genMethod: "midpoint" | "range" = "range",
 ): PrivacyResult {
   const t0 = performance.now();
   if (data.length === 0 || qis.length === 0) return sdcEmpty("K-Anonymity (Mondrian)");
@@ -222,7 +246,6 @@ export function applyKAnonymity(
   const N = data.length;
   const globalRanges = new Map<string, number>();
   qis.forEach((c) => globalRanges.set(c, columnRange(data, c)));
-  // Pre-compute global distinct counts for categorical columns
   const globalDistinctCountsKA = new Map<string, number>();
   qis.forEach((c) => {
     if (!isNumericCol(data, c)) {
@@ -235,9 +258,7 @@ export function applyKAnonymity(
   const processed: DataRow[] = [];
   const equivClassSizes: number[] = [];
 
-  // GIL computation (Generalised Information Loss)
-  // Numeric:     GIL[col] += (partRange / globalRange) × partitionSize
-  // Categorical: GIL[col] += ((localDistinct-1) / (globalDistinct-1)) × partitionSize
+  // GIL: GIL = (1/(|QI|×N)) × Σ_col Σ_record (range_in_partition / global_range)
   const gilPerCol = new Map<string, number>();
   qis.forEach((c) => gilPerCol.set(c, 0));
 
@@ -249,7 +270,6 @@ export function applyKAnonymity(
     }
     equivClassSizes.push(indices.length);
 
-    // Generalise QI values and compute GIL contribution
     const generalised: DataRow = {};
     qis.forEach((col) => {
       const vals = indices.map((i) => data[i][col]);
@@ -257,17 +277,30 @@ export function applyKAnonymity(
         const nums = vals.map((v) => Number(v)).filter((v) => !isNaN(v));
         const lo = Math.min(...nums), hi = Math.max(...nums);
         const partRange = hi - lo;
-        const gRange = globalRanges.get(col) || 1;
+        const gRange = Math.max(globalRanges.get(col) || 1, 1);
         gilPerCol.set(col, (gilPerCol.get(col) || 0) + (partRange / gRange) * indices.length);
-        generalised[col] = lo === hi ? String(lo) : `[${lo}–${hi}]`;
+        if (genMethod === "midpoint") {
+          const mid = (lo + hi) / 2;
+          generalised[col] = String(Number.isInteger(mid) ? mid : mid.toFixed(2));
+        } else {
+          generalised[col] = lo === hi ? String(lo) : `[${lo}–${hi}]`;
+        }
       } else {
         const distinct = Array.from(new Set(vals.map(String))).sort();
-        generalised[col] = distinct.length === 1 ? distinct[0] : `{${distinct.join(",")}}`;
-        // Categorical GIL: proportion of global diversity consumed by this partition
         const globalD = globalDistinctCountsKA.get(col) || 2;
         const localD = distinct.length;
         if (localD > 1) {
           gilPerCol.set(col, (gilPerCol.get(col) || 0) + ((localD - 1) / (globalD - 1)) * indices.length);
+        }
+        if (genMethod === "midpoint") {
+          // Most common value in partition = "centre" for categorical
+          const freq = new Map<string, number>();
+          vals.forEach((v) => { const s = String(v); freq.set(s, (freq.get(s) || 0) + 1); });
+          let bestVal = distinct[0], bestCnt = 0;
+          freq.forEach((cnt, v) => { if (cnt > bestCnt) { bestCnt = cnt; bestVal = v; } });
+          generalised[col] = bestVal;
+        } else {
+          generalised[col] = distinct.length === 1 ? distinct[0] : `{${distinct.join(",")}}`;
         }
       }
     });
@@ -280,12 +313,11 @@ export function applyKAnonymity(
     });
   }
 
-  // Compute GIL per col and overall
+  // Normalise GIL by N (total input records) per the NIST spec: GIL = (1/(|QI|×N)) × Σ
   const gilCols: Record<string, number> = {};
   let gilTotal = 0;
-  const nRetained = Math.max(processed.length, 1);
   qis.forEach((col) => {
-    const g = parseFloat(((gilPerCol.get(col) || 0) / nRetained).toFixed(4));
+    const g = parseFloat(((gilPerCol.get(col) || 0) / Math.max(N, 1)).toFixed(4));
     gilCols[col] = g;
     gilTotal += g;
   });
