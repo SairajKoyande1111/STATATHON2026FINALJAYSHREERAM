@@ -151,27 +151,55 @@ function mondrianPartition(data: DataRow[], qis: string[], k: number): Partition
   if (data.length === 0 || qis.length === 0) return [];
   const globalRanges = new Map<string, number>();
   qis.forEach((c) => globalRanges.set(c, columnRange(data, c)));
+  // Pre-compute global distinct counts for categorical columns
+  const globalDistinctCounts = new Map<string, number>();
+  qis.forEach((c) => {
+    if (!isNumericCol(data, c)) {
+      globalDistinctCounts.set(c, new Set(data.map((r) => String(r[c]))).size);
+    }
+  });
 
   function split(partition: Partition): Partition[] {
     const { indices } = partition;
     if (indices.length < 2 * k) return [partition];
-    let bestCol = qis[0], bestRange = 0;
+
+    let bestCol = qis[0], bestScore = -1, bestIsNumeric = false;
     for (const col of qis) {
-      const vals = indices.map((i) => Number(data[i][col])).filter((v) => !isNaN(v));
-      if (vals.length === 0) continue;
-      const rng = (Math.max(...vals) - Math.min(...vals)) / Math.max(globalRanges.get(col) || 1, 1);
-      if (rng > bestRange) { bestRange = rng; bestCol = col; }
+      if (isNumericCol(data, col)) {
+        const vals = indices.map((i) => Number(data[i][col])).filter((v) => !isNaN(v));
+        if (vals.length < 2) continue;
+        const rng = (Math.max(...vals) - Math.min(...vals)) / Math.max(globalRanges.get(col) || 1, 1);
+        if (rng > bestScore) { bestScore = rng; bestCol = col; bestIsNumeric = true; }
+      } else {
+        // Categorical: score = normalised within-partition diversity
+        const globalD = Math.max(globalDistinctCounts.get(col) || 1, 2);
+        const partD = new Set(indices.map((i) => String(data[i][col]))).size;
+        const score = (partD - 1) / (globalD - 1);
+        if (score > bestScore) { bestScore = score; bestCol = col; bestIsNumeric = false; }
+      }
     }
-    if (bestRange === 0) return [partition];
-    const vals = indices.map((i) => Number(data[i][bestCol])).filter((v) => !isNaN(v));
-    const mid = medianValue(vals);
-    const left: number[] = [], right: number[] = [];
-    indices.forEach((i) => {
-      const v = Number(data[i][bestCol]);
-      (isNaN(v) || v <= mid ? left : right).push(i);
-    });
-    if (left.length < k || right.length < k) return [partition];
-    return [...split({ indices: left }), ...split({ indices: right })];
+    if (bestScore <= 0) return [partition];
+
+    if (bestIsNumeric) {
+      const vals = indices.map((i) => Number(data[i][bestCol])).filter((v) => !isNaN(v));
+      const mid = medianValue(vals);
+      const left: number[] = [], right: number[] = [];
+      indices.forEach((i) => {
+        const v = Number(data[i][bestCol]);
+        (isNaN(v) || v <= mid ? left : right).push(i);
+      });
+      if (left.length < k || right.length < k) return [partition];
+      return [...split({ indices: left }), ...split({ indices: right })];
+    } else {
+      // Categorical split: sort distinct values alphabetically, assign first half left
+      const distinctVals = Array.from(new Set(indices.map((i) => String(data[i][bestCol])))).sort();
+      const midIdx = Math.max(1, Math.floor(distinctVals.length / 2));
+      const leftSet = new Set(distinctVals.slice(0, midIdx));
+      const left: number[] = [], right: number[] = [];
+      indices.forEach((i) => (leftSet.has(String(data[i][bestCol])) ? left : right).push(i));
+      if (left.length < k || right.length < k) return [partition];
+      return [...split({ indices: left }), ...split({ indices: right })];
+    }
   }
   return split({ indices: data.map((_, i) => i) });
 }
@@ -194,6 +222,13 @@ export function applyKAnonymity(
   const N = data.length;
   const globalRanges = new Map<string, number>();
   qis.forEach((c) => globalRanges.set(c, columnRange(data, c)));
+  // Pre-compute global distinct counts for categorical columns
+  const globalDistinctCountsKA = new Map<string, number>();
+  qis.forEach((c) => {
+    if (!isNumericCol(data, c)) {
+      globalDistinctCountsKA.set(c, Math.max(new Set(data.map((r) => String(r[c]))).size, 2));
+    }
+  });
 
   const partitions = mondrianPartition(data, qis, k);
   const suppressed: number[] = [];
@@ -201,7 +236,8 @@ export function applyKAnonymity(
   const equivClassSizes: number[] = [];
 
   // GIL computation (Generalised Information Loss)
-  // GIL = (1 / |QI| × N) × Σ_col Σ_record (range_in_partition / global_range)
+  // Numeric:     GIL[col] += (partRange / globalRange) × partitionSize
+  // Categorical: GIL[col] += ((localDistinct-1) / (globalDistinct-1)) × partitionSize
   const gilPerCol = new Map<string, number>();
   qis.forEach((c) => gilPerCol.set(c, 0));
 
@@ -227,6 +263,12 @@ export function applyKAnonymity(
       } else {
         const distinct = Array.from(new Set(vals.map(String))).sort();
         generalised[col] = distinct.length === 1 ? distinct[0] : `{${distinct.join(",")}}`;
+        // Categorical GIL: proportion of global diversity consumed by this partition
+        const globalD = globalDistinctCountsKA.get(col) || 2;
+        const localD = distinct.length;
+        if (localD > 1) {
+          gilPerCol.set(col, (gilPerCol.get(col) || 0) + ((localD - 1) / (globalD - 1)) * indices.length);
+        }
       }
     });
 

@@ -550,6 +550,29 @@ export async function registerRoutes(
     }
   });
 
+  // Save a client-side privacy result to the database
+  app.post("/api/privacy/save-result", requireAuth, async (req, res) => {
+    try {
+      const { datasetId, technique, method, parameters, processedData, recordsSuppressed, informationLoss } = req.body;
+      if (!datasetId || !technique) return res.status(400).send("Missing required fields");
+      const dataset = await storage.getDataset(datasetId);
+      if (!dataset || dataset.userId !== req.user!.id) return res.status(403).send("Forbidden");
+      const operation = await storage.createPrivacyOperation({
+        datasetId,
+        userId: req.user!.id,
+        technique,
+        method: method ?? null,
+        parameters: parameters ?? {},
+        processedData: processedData ?? [],
+        recordsSuppressed: recordsSuppressed ?? 0,
+        informationLoss: informationLoss ?? 0,
+      });
+      res.json(operation);
+    } catch (error) {
+      res.status(500).send("Failed to save result");
+    }
+  });
+
   const applyKAnonymity = (data: any[], quasiIdentifiers: string[], kValue: number, suppressionLimit: number) => {
     // Group by quasi-identifiers
     const groups = new Map<string, any[]>();

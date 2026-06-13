@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ import {
   GitMerge, BarChart3, ChevronRight, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Dataset } from "@shared/schema";
+import type { Dataset, PrivacyOperation } from "@shared/schema";
 import type { DataRow } from "@/lib/attacks/utils";
 import type { PrivacyResult } from "@/lib/privacy/types";
 import { downloadCSV } from "@/lib/privacy/types";
@@ -354,6 +355,10 @@ export default function PrivacyPage() {
     queryKey: ["/api/data", selectedDataset],
     enabled: !!selectedDataset,
   });
+  const { data: operations } = useQuery<PrivacyOperation[]>({
+    queryKey: ["/api/privacy/operations"],
+    refetchInterval: false,
+  });
   const rawData: DataRow[] = (datasetFull?.data as DataRow[]) ?? [];
   const selectedDS = datasets?.find((d) => d.id.toString() === selectedDataset);
   const allCols = selectedDS?.columns ?? [];
@@ -527,12 +532,31 @@ export default function PrivacyPage() {
 
       setResult(res!);
       toast({ title: `${res!.technique} complete`, description: `${res!.processedCount} records processed in ${res!.executionMs}ms.` });
+
+      // Persist to database (fire-and-forget — don't block UI)
+      if (selectedDataset) {
+        apiRequest("POST", "/api/privacy/save-result", {
+          datasetId: parseInt(selectedDataset),
+          technique: res!.technique,
+          method: family,
+          parameters: {
+            family, technique: activeTech,
+            quasiIdentifiers, sensitiveAttr, k: kVal[0], suppressionLimit: suppLimit[0],
+            l: lVal[0], lMethod, t: tVal[0], epsilon: epsilon[0], delta: delta[0],
+          },
+          processedData: res!.processedData.slice(0, 1000), // cap to avoid huge payload
+          recordsSuppressed: res!.recordsSuppressed,
+          informationLoss: res!.informationLoss,
+        }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/privacy/operations"] });
+        }).catch(() => { /* silent – saving is best-effort */ });
+      }
     } catch (err: unknown) {
       toast({ title: "Error", description: err instanceof Error ? err.message : "Processing failed.", variant: "destructive" });
     } finally {
       setRunning(false);
     }
-  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, allCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, epsilon, delta, synthSize, preserveCorr, dpSgdClip, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, toast]);
+  }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, allCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, epsilon, delta, synthSize, preserveCorr, dpSgdClip, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, selectedDataset, toast]);
 
   // ─── Shared column pickers ─────────────────────────────────────────────────
   const activeTechId =
@@ -669,6 +693,38 @@ export default function PrivacyPage() {
                     </ScrollArea>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Recent operations history */}
+          {operations && operations.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Server className="h-4 w-4 text-muted-foreground" />
+                  Recent Operations
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1 p-3">
+                {operations.slice(0, 5).map((op) => (
+                  <div key={op.id} className="flex items-start justify-between rounded-md border px-2.5 py-2 text-xs gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{op.technique}</p>
+                      <p className="text-muted-foreground truncate">
+                        {op.createdAt ? new Date(op.createdAt).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" }) : ""}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <Badge variant="outline" className={`text-[10px] py-0 ${(op.informationLoss ?? 0) > 0.3 ? "border-rose-400 text-rose-600" : (op.informationLoss ?? 0) > 0.05 ? "border-amber-400 text-amber-600" : "border-emerald-400 text-emerald-600"}`}>
+                        {((op.informationLoss ?? 0) * 100).toFixed(1)}% loss
+                      </Badge>
+                      {op.recordsSuppressed != null && op.recordsSuppressed > 0 && (
+                        <p className="text-muted-foreground mt-0.5">{op.recordsSuppressed} suppressed</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           )}
