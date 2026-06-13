@@ -668,12 +668,12 @@ export default function PrivacyPage() {
 
   // ── Federated parameters ───────────────────────────────────────────────────
   const [fedNodes,       setFedNodes]       = useState([3]);
-  const [fedRounds,      setFedRounds]      = useState([5]);
+  const [fedRounds,      setFedRounds]      = useState([10]);
   const [fedDP,          setFedDP]          = useState(false);
   const [fedEps,         setFedEps]         = useState([2.0]);
   const [fedGenSynth,    setFedGenSynth]    = useState(true);
-  const [fedLocalEpochs, setFedLocalEpochs] = useState([3]);
-  const [fedLocalLR,     setFedLocalLR]     = useState([0.001]);
+  const [fedLocalEpochs, setFedLocalEpochs] = useState([5]);
+  const [fedLocalLR,     setFedLocalLR]     = useState([0.01]);
   const [fedBatchSize,   setFedBatchSize]   = useState([4]);
   const [fedPartition,   setFedPartition]   = useState<"iid" | "noniid">("iid");
   const [fedDelta,       setFedDelta]       = useState([1e-5]);
@@ -2554,7 +2554,7 @@ export default function PrivacyPage() {
 
                       {/* Federation topology */}
                       <SliderField label="Federated Nodes (K)" value={fedNodes} onChange={setFedNodes} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Dataset partitioned across ${fedNodes[0]} simulated clients.`} />
-                      <SliderField label="Communication Rounds (T)" value={fedRounds} onChange={setFedRounds} min={1} max={10} step={1} format={(v) => String(v)} helpText="Global FedAvg aggregation rounds" />
+                      <SliderField label="Communication Rounds (T)" value={fedRounds} onChange={setFedRounds} min={1} max={30} step={1} format={(v) => String(v)} helpText="Global FedAvg aggregation rounds" />
 
                       {/* Partition strategy */}
                       <div className="space-y-2">
@@ -2573,7 +2573,7 @@ export default function PrivacyPage() {
 
                       {/* Local training */}
                       <SliderField label="Local Epochs (E)" value={fedLocalEpochs} onChange={setFedLocalEpochs} min={1} max={10} step={1} format={(v) => String(v)} helpText={`${fedLocalEpochs[0]} local SGD epoch(s) per node per round`} />
-                      <SliderField label="Local Learning Rate (η)" value={fedLocalLR} onChange={setFedLocalLR} min={0.0001} max={0.01} step={0.0001} format={(v) => v.toFixed(4)} helpText={`SGD learning rate on local data (η=${fedLocalLR[0].toFixed(4)})`} />
+                      <SliderField label="Local Learning Rate (η)" value={fedLocalLR} onChange={setFedLocalLR} min={0.001} max={0.1} step={0.001} format={(v) => v.toFixed(3)} helpText={`SGD learning rate on local data (η=${fedLocalLR[0].toFixed(3)})`} />
                       <SliderField label="Mini-Batch Size (B)" value={fedBatchSize} onChange={setFedBatchSize} min={2} max={16} step={2} format={(v) => String(v)} helpText={`${fedBatchSize[0]} records per mini-batch (local SGD)`} />
 
                       {/* DP-FedAvg toggle */}

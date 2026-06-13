@@ -57,7 +57,10 @@ function buildSchema(data: DataRow[]): DataSchema {
     } else {
       const strVals = data.map((r) => String(r[name] ?? ""));
       const uniq    = Array.from(new Set(strVals)).sort();
-      if (uniq.length < 2 || uniq.length > 20) continue;  // skip degenerate cols
+      if (uniq.length < 2 || uniq.length > 20) continue;  // skip degenerate / high-cardinality cols
+      // Skip near-constant columns: dominant category > 90% of rows carries near-zero information
+      const dominantCount = Math.max(...uniq.map((u) => strVals.filter((v) => v === u).length));
+      if (dominantCount / strVals.length > 0.90) continue;
       // One-hot (drop last category to avoid multicollinearity): size = uniq.length - 1
       const encSize = uniq.length - 1;
       if (encSize < 1) continue;
@@ -478,7 +481,9 @@ export function applyFederatedLearning(
       colStats[col.name] = {
         "Type":       "categorical",
         "Categories": col.categories.length,
-        "Encoding":   `One-hot (${col.categories.length - 1}-dim)`,
+        "Encoding":   col.categories.length === 2
+          ? "Binary indicator (0/1)"
+          : `One-hot (${col.categories.length - 1}-dim, drop-last)`,
         "Role":       "One-hot encoded",
       };
     }
@@ -583,7 +588,7 @@ function buildFLReport(p: FLReportParams): string {
   ).join("\n");
 
   const roundRows = p.roundHistory.slice(0, 10).map((r) =>
-    `<tr><td>${r.round}</td><td>${r.globalLoss.toFixed(6)}</td><td>${r.weightNorm.toFixed(2)}</td></tr>`
+    `<tr><td>${r.round}</td><td>${r.globalLoss.toFixed(6)}</td><td>${r.weightNorm.toFixed(4)}</td></tr>`
   ).join("\n");
 
   const colRows = Object.entries(p.colStats).map(([col, s]) =>
@@ -716,8 +721,10 @@ ${p.generateSynthetic ? `
        via RDP composition across ${p.T} rounds × ${p.K} nodes.</p>`
     : `<p><b>FedAvg Guarantee:</b> Data isolation — only aggregated model weights are shared. 
        No formal DP guarantee (enable DP-FedAvg for DP protection).</p>`}
-  <p><b>Compliance:</b> Aligned with NIST SP 800-188 (De-Identification of Personal Information) 
-  and India DPDP Act 2023 technical safeguard requirements.</p>
+  <p><b>Compliance:</b> Aligned with NIST SP 800-188 (De-Identification of Personal Information).${p.dp
+    ? " DP-FedAvg satisfies India DPDP Act 2023 §8(4) technical safeguard requirements via a provable (ε,δ)-DP guarantee."
+    : " Standard FedAvg provides data locality only — no formal DP guarantee. Enable DP-FedAvg to satisfy DPDP Act 2023 §8(4) differential privacy requirements."
+  }</p>
 </div>
 </body></html>`;
 }
