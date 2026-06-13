@@ -888,7 +888,7 @@ export default function PrivacyPage() {
   );
 
   const showTC_other = family !== "sdc" && (
-    family === "dp" || family === "synthetic" || family === "crypto"
+    family === "synthetic" || family === "crypto"
   );
 
   // Filtered target columns per technique
