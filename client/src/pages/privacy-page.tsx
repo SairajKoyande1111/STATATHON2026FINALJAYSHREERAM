@@ -1305,7 +1305,7 @@ export default function PrivacyPage() {
         </div>
 
         {/* ── RIGHT PANEL ─────────────────────────────────────────────────── */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0 overflow-hidden">
           <Tabs value={family} onValueChange={(v) => { setFamily(v as FamilyId); setResult(null); }}>
             <TabsList className="w-full h-auto flex flex-wrap gap-1 p-1">
               {FAMILIES.map((f) => (
@@ -1319,7 +1319,7 @@ export default function PrivacyPage() {
 
             {/* ══ FAMILY 1: SDC ══════════════════════════════════════════════ */}
             <TabsContent value="sdc" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">Technique</CardTitle>
@@ -1333,7 +1333,7 @@ export default function PrivacyPage() {
                   </CardContent>
                 </Card>
 
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0 overflow-hidden">
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -1708,14 +1708,14 @@ export default function PrivacyPage() {
 
             {/* ══ FAMILY 2: DIFFERENTIAL PRIVACY ═════════════════════════════ */}
             <TabsContent value="dp" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Mechanism</CardTitle></CardHeader>
                   <CardContent>
                     <TechList items={DP_TECHNIQUES} selected={dpTech} onSelect={(id) => { setDpTech(id); setResult(null); }} />
                   </CardContent>
                 </Card>
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0 overflow-hidden">
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -1756,14 +1756,14 @@ export default function PrivacyPage() {
 
             {/* ══ FAMILY 3: SYNTHETIC DATA ════════════════════════════════════ */}
             <TabsContent value="synthetic" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Method</CardTitle></CardHeader>
                   <CardContent>
                     <TechList items={SDG_TECHNIQUES} selected={sdgTech} onSelect={(id) => { setSdgTech(id); setResult(null); }} />
                   </CardContent>
                 </Card>
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0 overflow-hidden">
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -1808,14 +1808,14 @@ export default function PrivacyPage() {
 
             {/* ══ FAMILY 4: CRYPTOGRAPHIC PETs ═══════════════════════════════ */}
             <TabsContent value="crypto" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Protocol</CardTitle></CardHeader>
                   <CardContent>
                     <TechList items={CRYPTO_TECHNIQUES} selected={cryptoTech} onSelect={(id) => { setCryptoTech(id); setResult(null); }} />
                   </CardContent>
                 </Card>
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0 overflow-hidden">
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -1860,14 +1860,14 @@ export default function PrivacyPage() {
 
             {/* ══ FAMILY 5: FEDERATED LEARNING ════════════════════════════════ */}
             <TabsContent value="federated" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Protocol</CardTitle></CardHeader>
                   <CardContent>
                     <TechList items={FED_TECHNIQUES} selected={fedTech} onSelect={() => {}} />
                   </CardContent>
                 </Card>
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0 overflow-hidden">
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-base">
