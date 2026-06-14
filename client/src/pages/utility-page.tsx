@@ -413,7 +413,9 @@ export default function UtilityPage() {
   });
 
   const raw = active?.metrics ?? null;
-  const m: UtilityMetrics | null = raw ? {
+  // Detect legacy stub format (old server stored { queryAccuracy, statisticalSimilarity } only)
+  const isLegacyMetrics = raw != null && (raw as any).ous == null && active?.overallUtility != null;
+  const m: UtilityMetrics | null = (raw && !isLegacyMetrics) ? {
     ...raw,
     ous: raw.ous ?? 0,
     grade: raw.grade ?? "F",
@@ -588,8 +590,29 @@ export default function UtilityPage() {
         {/* ── RESULTS PANEL ────────────────────────────────────────────── */}
         <div className="flex-1 overflow-auto flex flex-col gap-4 pb-6">
 
+          {/* Legacy-format measurement banner */}
+          {isLegacyMetrics && !measureMut.isPending && (
+            <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/30">
+              <CardContent className="pt-5 pb-5">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold text-amber-800 dark:text-amber-300">Legacy Measurement Format</p>
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      This measurement was created by an older version of the server and does not contain
+                      detailed metrics. The overall utility score was <strong>{Math.round((active?.overallUtility ?? 0) * 100)}%</strong>.
+                    </p>
+                    <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                      To get the full breakdown, select the same dataset and operation in the left panel and click <strong>Measure Utility</strong> to recompute.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Empty state */}
-          {!m && !measureMut.isPending && (
+          {!m && !isLegacyMetrics && !measureMut.isPending && (
             <Card className="flex items-center justify-center min-h-64">
               <div className="text-center space-y-3 p-8">
                 <BarChart2 className="h-12 w-12 text-muted-foreground mx-auto" />
