@@ -412,10 +412,24 @@ export default function UtilityPage() {
     onError: (e: any) => toast({ title: "Measurement failed", description: String(e.message), variant: "destructive" }),
   });
 
-  const m: UtilityMetrics | null = active?.metrics ?? null;
+  const raw = active?.metrics ?? null;
+  const m: UtilityMetrics | null = raw ? {
+    ...raw,
+    numericFidelity: raw.numericFidelity ?? [],
+    catFidelity: raw.catFidelity ?? [],
+    correlationCols: raw.correlationCols ?? [],
+    corrOrig: raw.corrOrig ?? [],
+    corrProc: raw.corrProc ?? [],
+    warnings: raw.warnings ?? [],
+    recommendations: raw.recommendations ?? [],
+    numericCols: raw.numericCols ?? [],
+    catCols: raw.catCols ?? [],
+    suppressedCols: raw.suppressedCols ?? [],
+    commonCols: raw.commonCols ?? [],
+  } : null;
 
   const deltaCorr = useMemo(() => {
-    if (!m || m.correlationCols.length < 2) return [];
+    if (!m || m.correlationCols.length < 2 || !m.corrOrig.length) return [];
     return m.corrOrig.map((row, i) => row.map((v, j) => v - (m.corrProc[i]?.[j] ?? v)));
   }, [m]);
 
