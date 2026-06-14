@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import { v4 as uuidv4 } from "uuid";
 import { calculateRiskMetrics, getRiskLevel } from "./risk-utils";
 import { applyLDiversityDistinct, applyTCloseness, applyKAnonymityEnhanced } from "./privacy-utils";
+import { computeUtilityMetrics, getGrade } from "./utility-compute";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -891,49 +892,54 @@ export async function registerRoutes(
   app.post("/api/utility/measure", requireAuth, async (req, res) => {
     try {
       const { originalDatasetId, processedOperationId } = req.body;
-      
+
       const originalDataset = await storage.getDataset(originalDatasetId);
       const operation = await storage.getPrivacyOperation(processedOperationId);
-      
+
       if (!originalDataset || !operation) {
         return res.status(404).send("Dataset or operation not found");
       }
 
-      const originalData = originalDataset.data as any[];
-      const processedData = operation.processedData as any[];
+      const originalData = (originalDataset.data as any[]) || [];
+      const processedData = (operation.processedData as any[]) || [];
 
-      // Calculate utility metrics
-      const numericColumns = originalDataset.columns?.filter((col) => {
-        return originalData.length > 0 && typeof originalData[0][col] === "number";
-      }) || [];
+      if (!originalData.length) {
+        return res.status(400).send("Original dataset has no data");
+      }
+      if (!processedData.length) {
+        return res.status(400).send("Processed operation has no output data");
+      }
 
-      let statisticalSimilarity = 0.9;
-      let correlationPreservation = 0.85;
-      let distributionSimilarity = 0.88;
+      // Fetch last risk assessment for this dataset to get riskBefore
+      let riskBefore: number | null = null;
+      try {
+        const riskAssessments = await storage.getRiskAssessments(req.user!.id);
+        const dsRisk = riskAssessments
+          .filter((r) => r.datasetId === originalDatasetId)
+          .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))[0];
+        if (dsRisk) riskBefore = dsRisk.overallRisk;
+      } catch (_) {}
 
-      // Calculate mean preservation for numeric columns
-      numericColumns.forEach((col) => {
-        const originalMean = originalData.reduce((sum, row) => sum + (row[col] || 0), 0) / originalData.length;
-        const processedMean = processedData.reduce((sum, row) => sum + (row[col] || 0), 0) / processedData.length;
-        
-        if (originalMean !== 0) {
-          const preservation = 1 - Math.abs(originalMean - processedMean) / Math.abs(originalMean);
-          statisticalSimilarity = Math.min(statisticalSimilarity, Math.max(0, preservation));
-        }
-      });
+      // Run full computation engine
+      const metrics = computeUtilityMetrics(
+        originalData,
+        processedData,
+        originalDataset.columns || [],
+        operation.technique,
+        originalDataset.originalName,
+        riskBefore,
+      );
 
-      const informationLoss = operation.informationLoss || 0.15;
-      const overallUtility = (statisticalSimilarity + correlationPreservation + distributionSimilarity + (1 - informationLoss)) / 4;
-
-      let utilityLevel = "Poor";
-      if (overallUtility >= 0.9) utilityLevel = "Excellent";
-      else if (overallUtility >= 0.75) utilityLevel = "Good";
-      else if (overallUtility >= 0.5) utilityLevel = "Fair";
-
-      const columnMetrics = numericColumns.map((col) => ({
-        column: col,
-        preservation: statisticalSimilarity * 100,
-      }));
+      // Map to DB schema fields
+      const overallUtility = metrics.ous / 100;
+      const gradeToLevel = (g: string) => {
+        if (g === 'A+' || g === 'A') return 'Excellent';
+        if (g === 'B') return 'Good';
+        if (g === 'C') return 'Fair';
+        return 'Poor';
+      };
+      const utilityLevel = gradeToLevel(metrics.grade);
+      const informationLoss = 1 - metrics.sfs;
 
       const measurement = await storage.createUtilityMeasurement({
         originalDatasetId,
@@ -941,22 +947,33 @@ export async function registerRoutes(
         userId: req.user!.id,
         overallUtility,
         utilityLevel,
-        statisticalSimilarity: { value: statisticalSimilarity, columnMetrics },
-        correlationPreservation,
-        distributionSimilarity,
+        statisticalSimilarity: { value: metrics.sfs },
+        correlationPreservation: metrics.cpScore,
+        distributionSimilarity: metrics.dsScore,
         informationLoss,
-        queryAccuracy: { value: 0.92 },
-        metrics: { statisticalSimilarity, queryAccuracy: 0.92 },
-        recommendations: [
-          "The anonymized data maintains good statistical properties for analysis",
-          "Correlation between variables is well preserved",
-        ],
+        queryAccuracy: { value: metrics.puScore },
+        metrics: metrics as any,
+        recommendations: metrics.recommendations,
       });
 
       res.json(measurement);
     } catch (error) {
       console.error("Utility measurement error:", error);
       res.status(500).send("Failed to measure utility");
+    }
+  });
+
+  // Get last risk assessment for a specific dataset
+  app.get("/api/risk/dataset/:datasetId", requireAuth, async (req, res) => {
+    try {
+      const datasetId = parseInt(req.params.datasetId);
+      const allAssessments = await storage.getRiskAssessments(req.user!.id);
+      const filtered = allAssessments
+        .filter((r) => r.datasetId === datasetId)
+        .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+      res.json(filtered[0] || null);
+    } catch (error) {
+      res.status(500).send("Failed to get risk assessment");
     }
   });
 
