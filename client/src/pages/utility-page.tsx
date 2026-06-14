@@ -746,24 +746,50 @@ export default function UtilityPage() {
               <Card>
                 <CardContent className="pt-4 pb-4">
                   {/* Top row: Score + Grade + metadata */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Overall Utility Score</p>
-                      <div className="flex items-baseline gap-3 mt-1">
-                        <span className="text-5xl font-bold">{m.ous}%</span>
-                        <div className={`border rounded-lg px-3 py-1 ${gradeBg(m.grade)}`}>
-                          <span className={`text-2xl font-bold ${gradeColor(m.grade)}`}>{m.grade}</span>
+                  {(() => {
+                    const excludedCols = [...(m.pseudonymizedCols ?? []), ...(m.allNullCols ?? [])];
+                    const totalOrig = m.numericCols.length + m.catCols.length;
+                    const totalScored = totalOrig - excludedCols.length;
+                    // Derive the base label phrase before any em-dash qualifier
+                    const basePhraseMap: Record<string, string> = {
+                      "A+": "Exceptional", A: "Excellent", B: "Good",
+                      C: "Acceptable", D: "Poor", F: "Fail",
+                    };
+                    const basePhrase = basePhraseMap[m.grade] ?? m.grade;
+                    const displayGradeLabel = excludedCols.length > 0
+                      ? `${basePhrase} on retained columns — ${excludedCols.length} column(s) lost all statistical utility`
+                      : m.gradeLabel;
+                    const scoringCoverage = excludedCols.length > 0
+                      ? `computed on ${totalScored} of ${totalOrig} columns`
+                      : null;
+                    return (
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Overall Utility Score</p>
+                          <div className="flex items-baseline gap-3 mt-1">
+                            <span className="text-5xl font-bold">{m.ous}%</span>
+                            <div className={`border rounded-lg px-3 py-1 ${gradeBg(m.grade)}`}>
+                              <span className={`text-2xl font-bold ${gradeColor(m.grade)}`}>{m.grade}</span>
+                            </div>
+                            {scoringCoverage && (
+                              <span className="text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 rounded px-2 py-0.5 self-center">
+                                {scoringCoverage}
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-xs mt-1 ${excludedCols.length > 0 ? "text-amber-700 dark:text-amber-400 font-medium" : "text-muted-foreground"}`}>
+                            {displayGradeLabel}
+                          </p>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground space-y-0.5">
+                          <p className="font-semibold text-foreground text-sm">{m.datasetName}</p>
+                          <p>Technique: <span className="font-medium capitalize">{m.technique}</span></p>
+                          <p>{m.rowsOrig.toLocaleString()} → {m.rowsProc.toLocaleString()} rows</p>
+                          <p>{suppPct.toFixed(1)}% suppressed &nbsp;·&nbsp; {m.numericCols.length}N + {m.catCols.length}C columns</p>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">{m.gradeLabel}</p>
-                    </div>
-                    <div className="text-right text-xs text-muted-foreground space-y-0.5">
-                      <p className="font-semibold text-foreground text-sm">{m.datasetName}</p>
-                      <p>Technique: <span className="font-medium capitalize">{m.technique}</span></p>
-                      <p>{m.rowsOrig.toLocaleString()} → {m.rowsProc.toLocaleString()} rows</p>
-                      <p>{suppPct.toFixed(1)}% suppressed &nbsp;·&nbsp; {m.numericCols.length}N + {m.catCols.length}C columns</p>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* 5 component score bars + Risk Reduction card (Fix #6) */}
                   <div className="grid grid-cols-6 gap-4 mb-3">
