@@ -59,12 +59,65 @@ function catEntropy(vals: (string | number)[]): number {
   return shannonH(Array.from(freq.values()));
 }
 
+// ── UNIT SUFFIX STRIPPING ─────────────────────────────────────────────────────
+
+// Strips common unit suffixes (e.g. " acres", " ha", " kg") before numeric parse.
+// Also handles suffixes without a space (e.g. "5acres").
+const UNIT_PATTERNS = [
+  /\s+acres?$/i,
+  /\s+ha$/i,
+  /\s+hectares?$/i,
+  /\s+kg$/i,
+  /\s+lbs?$/i,
+  /\s+kgs?$/i,
+  /\s+m2?$/i,
+  /\s+sq\.?\s*ft\.?$/i,
+  /\s+%$/,
+];
+
+function stripUnit(v: any): any {
+  if (typeof v !== 'string') return v;
+  let s = v.trim();
+  for (const pat of UNIT_PATTERNS) {
+    s = s.replace(pat, '');
+  }
+  return s;
+}
+
+// ── PSEUDONYMIZATION DETECTION ────────────────────────────────────────────────
+
+// Returns true if the processed column has been converted to opaque identifier tokens
+// (e.g. "PSEUDO_95012", hash-based tokens).  Uses ≥60% of non-null values matching
+// the PSEUDO_* pattern, OR all non-null values failing parseFloat.
+const PSEUDO_RE = /^PSEUDO_/i;
+
+function columnIsPseudonymized(rows: Row[], col: string): boolean {
+  const nonNull = rows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== '');
+  if (!nonNull.length) return false;
+  const pseudoCount = nonNull.filter(v => PSEUDO_RE.test(String(v))).length;
+  if (pseudoCount / nonNull.length >= 0.6) return true;
+  // Secondary check: all values are non-numeric strings (fail parseFloat)
+  const numericCount = nonNull.filter(v => {
+    const stripped = stripUnit(v);
+    return !isNaN(parseFloat(String(stripped))) && String(stripped).trim() !== '';
+  }).length;
+  return numericCount === 0 && nonNull.length > 0;
+}
+
+// ── ALL-NULL DETECTION ────────────────────────────────────────────────────────
+
+function columnIsAllNull(rows: Row[], col: string): boolean {
+  if (!rows.length) return true;
+  return rows.every(r => r[col] === null || r[col] === undefined || String(r[col]).trim() === '');
+}
+
 // ── NUMERIC VALUE EXTRACTORS ──────────────────────────────────────────────────
 
 function numVals(rows: Row[], col: string): number[] {
   const out: number[] = [];
   for (const r of rows) {
-    const v = Number(r[col]);
+    const raw = stripUnit(r[col]);
+    const v = Number(raw);
     if (!isNaN(v)) out.push(v);
   }
   return out;
@@ -74,13 +127,14 @@ function numVals(rows: Row[], col: string): number[] {
 function parseMidpoint(v: any): number | null {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') {
-    const m1 = v.match(/^([\d.]+)-([\d.]+)$/);
+    const s = stripUnit(v);
+    const m1 = String(s).match(/^([\d.]+)-([\d.]+)$/);
     if (m1) return (parseFloat(m1[1]) + parseFloat(m1[2])) / 2;
-    const m2 = v.match(/^([\d.]+)\+$/);
+    const m2 = String(s).match(/^([\d.]+)\+$/);
     if (m2) return parseFloat(m2[1]) * 1.1;
-    const m3 = v.match(/^[<≤]\s*([\d.]+)$/);
+    const m3 = String(s).match(/^[<≤]\s*([\d.]+)$/);
     if (m3) return parseFloat(m3[1]) / 2;
-    const n = parseFloat(v);
+    const n = parseFloat(String(s));
     if (!isNaN(n)) return n;
   }
   return null;
@@ -260,6 +314,11 @@ export interface NumFidelity {
   procP: number[];
   histogram: HistogramData;
   generalised: boolean;
+  // Fix #1: pseudonymization flags
+  pseudonymized: boolean;   // true if processed column converted to PSEUDO_* tokens
+  // Fix #7: all-null flag
+  allNull: boolean;         // true if 100% null in both original and processed
+  excluded: boolean;        // true if excluded from scoring (pseudonymized or allNull)
 }
 
 export interface CatFidelity {
@@ -277,12 +336,25 @@ export interface CatFidelity {
 // ── PER-COLUMN COMPUTATION ────────────────────────────────────────────────────
 
 function computeNumFidelity(origRows: Row[], procRows: Row[], col: string): NumFidelity {
-  const origVals = numVals(origRows, col);
-  const sampleProc = procRows.slice(0, 5).map(r => r[col]);
-  const isGeneralised = sampleProc.some(v => typeof v === 'string' && isNaN(Number(v)));
-  const procVals = isGeneralised ? approxNumVals(procRows, col) : numVals(procRows, col);
+  // Fix #7: Check if column is 100% null in both original and processed
+  const origAllNull = columnIsAllNull(origRows, col);
+  const procAllNull = columnIsAllNull(procRows, col);
+  const allNull = origAllNull && procAllNull;
 
-  const empty: NumFidelity = {
+  // Fix #1: Detect if processed column has been pseudonymized (PSEUDO_* tokens or non-numeric)
+  const pseudonymized = !procAllNull && columnIsPseudonymized(procRows, col);
+
+  // Fix #2: Strip unit suffixes when extracting numeric values (handles " acres" etc.)
+  const origVals = numVals(origRows, col);  // numVals already calls stripUnit
+
+  const sampleProc = procRows.slice(0, 5).map(r => r[col]);
+  // Only treat as generalised if NOT pseudonymized — generalised values have range patterns like "30-40"
+  const isGeneralised = !pseudonymized && sampleProc.some(v => typeof v === 'string' && isNaN(Number(v)));
+  const procVals = pseudonymized
+    ? []  // no usable numeric data
+    : (isGeneralised ? approxNumVals(procRows, col) : numVals(procRows, col));
+
+  const emptyBase: NumFidelity = {
     col, origMean: 0, procMean: 0, origStd: 0, procStd: 0, origMin: 0, origMax: 0,
     origMedian: 0, procMedian: 0,
     relBias: 0, varRatio: 1, nmae: 0, mps: 1, pp: 1, sfs: 1,
@@ -290,8 +362,58 @@ function computeNumFidelity(origRows: Row[], procRows: Row[], col: string): NumF
     origP: [0,0,0,0,0,0,0], procP: [0,0,0,0,0,0,0],
     histogram: { bins: [], origCounts: [], procCounts: [] },
     generalised: isGeneralised,
+    pseudonymized: false,
+    allNull: false,
+    excluded: false,
   };
-  if (!origVals.length) return empty;
+
+  // Fix #7: All-null in both — exclude from scoring (return N/A marker)
+  if (allNull) {
+    return { ...emptyBase, allNull: true, excluded: true, sfs: 0 };
+  }
+
+  if (!origVals.length) return { ...emptyBase, pseudonymized, excluded: pseudonymized };
+
+  // Fix #1: Pseudonymized column → SFS = 0, total information loss
+  if (pseudonymized) {
+    const origMean = mean(origVals);
+    const origVar = variance(origVals, origMean);
+    const origStd = Math.sqrt(origVar);
+    const sOrig = sortedArr(origVals);
+    const origP = [5, 10, 25, 50, 75, 90, 95].map(p => percentile(sOrig, p));
+    return {
+      ...emptyBase,
+      col,
+      origMean,
+      origStd,
+      origMin: Math.min(...origVals),
+      origMax: Math.max(...origVals),
+      origMedian: origP[3],
+      origP,
+      // Processed stats are meaningless — show 0
+      procMean: 0, procStd: 0, procMedian: 0,
+      procP: [0,0,0,0,0,0,0],
+      // Worst-case divergence metrics
+      relBias: 100,
+      varRatio: 0,
+      nmae: 1,
+      mps: 0,
+      pp: 0,
+      sfs: 0,            // Fix #1: SFS = 0%
+      ksStat: 1,
+      jsd: 1,            // Fix #3: Consistent with Distributions tab
+      wassersteinNorm: 1,
+      entropyOrig: numericEntropy(origVals),
+      entropyProc: 0,
+      epr: 0,
+      uvrr: 0,
+      histogram: buildHistogram(origVals, []),
+      generalised: false,
+      pseudonymized: true,
+      allNull: false,
+      excluded: true,    // Fix #1: excluded from SFS average
+    };
+  }
 
   const origMean = mean(origVals);
   const procMean = procVals.length ? mean(procVals) : origMean;
@@ -345,11 +467,14 @@ function computeNumFidelity(origRows: Row[], procRows: Row[], col: string): NumF
 
   return {
     col, origMean, procMean, origStd, procStd, origMin, origMax,
-    origMedian: origP[2], procMedian: procP[2],
+    origMedian: origP[3], procMedian: procP[3],
     relBias, varRatio, nmae, mps, pp, sfs,
     ksStat: ks, jsd: jsdVal, wassersteinNorm: w1,
     entropyOrig: entOrig, entropyProc: entProc, epr, uvrr,
     origP, procP, histogram, generalised: isGeneralised,
+    pseudonymized: false,
+    allNull: false,
+    excluded: false,
   };
 }
 
@@ -427,12 +552,15 @@ export interface UtilityMetrics {
   icScore: number;
   cpScore: number;
   puScore: number;
+  puInsufficient: boolean;   // Fix #5: true when <2 valid numeric cols for PU
   rowsOrig: number;
   rowsProc: number;
   commonCols: string[];
   numericCols: string[];
   catCols: string[];
   suppressedCols: string[];
+  pseudonymizedCols: string[];   // Fix #1: columns that were pseudonymized
+  allNullCols: string[];         // Fix #7: columns that are 100% null in both
   numericFidelity: NumFidelity[];
   catFidelity: CatFidelity[];
   correlationCols: string[];
@@ -469,10 +597,14 @@ export function computeUtilityMetrics(
     warnings.push(`${rowDiff} rows suppressed during processing (${(rowDiff / origRows.length * 100).toFixed(1)}%)`);
 
   // Classify columns — a column is numeric if ≥70% of original values parse as numbers
+  // Fix #2: stripUnit is applied inside numVals, so unit-suffixed columns classify correctly
   const numericCols = commonCols.filter(col => {
     const tot = Math.min(origRows.length, 100);
     const sample = origRows.slice(0, tot);
-    const numCount = sample.filter(r => typeof r[col] === 'number' || (!isNaN(parseFloat(String(r[col]))) && String(r[col]).trim() !== '')).length;
+    const numCount = sample.filter(r => {
+      const stripped = stripUnit(r[col]);
+      return !isNaN(parseFloat(String(stripped))) && String(stripped).trim() !== '';
+    }).length;
     return numCount / (tot || 1) >= 0.7;
   });
   const catCols = commonCols.filter(c => !numericCols.includes(c));
@@ -481,29 +613,52 @@ export function computeUtilityMetrics(
   const numFidelity = numericCols.map(col => computeNumFidelity(origRows, procRows, col));
   const catFidelity = catCols.map(col => computeCatFidelity(origRows, procRows, col));
 
-  const numSFS = numFidelity.length ? mean(numFidelity.map(f => f.sfs)) : 0.9;
+  // Collect pseudonymized and all-null column names for reporting
+  const pseudonymizedCols = numFidelity.filter(f => f.pseudonymized).map(f => f.col);
+  const allNullCols = numFidelity.filter(f => f.allNull).map(f => f.col);
+
+  // Warn about pseudonymized columns
+  if (pseudonymizedCols.length > 0) {
+    warnings.push(
+      `${pseudonymizedCols.length} column(s) converted to identifier tokens — excluded from statistical scoring: ${pseudonymizedCols.join(', ')}`
+    );
+  }
+  if (allNullCols.length > 0) {
+    warnings.push(
+      `${allNullCols.length} column(s) are 100% null in both datasets — excluded from scoring: ${allNullCols.join(', ')}`
+    );
+  }
+
+  // Fix #1 + #7: Only include non-excluded columns in SFS average
+  const scoredNumFidelity = numFidelity.filter(f => !f.excluded);
+  const numSFS = scoredNumFidelity.length ? mean(scoredNumFidelity.map(f => f.sfs)) : 0.9;
   const catSFS = catFidelity.length ? mean(catFidelity.map(f => f.sfs)) : 0.9;
-  const allN = numericCols.length + catCols.length;
+  const allN = scoredNumFidelity.length + catCols.length;
   const sfs = allN > 0
-    ? (numSFS * numericCols.length + catSFS * catCols.length) / allN
+    ? (numSFS * scoredNumFidelity.length + catSFS * catCols.length) / allN
     : 0.85;
 
-  // Step 2: Distribution Similarity
-  const numDS = numFidelity.length ? mean(numFidelity.map(f => 1 - f.jsd)) : 0.9;
+  // Step 2: Distribution Similarity — also exclude pseudonymized from DS average
+  const numDS = scoredNumFidelity.length ? mean(scoredNumFidelity.map(f => 1 - f.jsd)) : 0.9;
   const catDS = catFidelity.length ? mean(catFidelity.map(f => f.histIntersection)) : 0.9;
   const dsScore = allN > 0
-    ? (numDS * numericCols.length + catDS * catCols.length) / allN
+    ? (numDS * scoredNumFidelity.length + catDS * catCols.length) / allN
     : 0.85;
 
-  // Step 3: Information Content
+  // Step 3: Information Content — exclude pseudonymized from IC average
   const allEPR = [
-    ...numFidelity.map(f => clamp(Math.max(0, 1 - Math.abs(1 - f.epr)))),
+    ...scoredNumFidelity.map(f => clamp(Math.max(0, 1 - Math.abs(1 - f.epr)))),
     ...catFidelity.map(f => clamp(Math.max(0, 1 - Math.abs(1 - f.epr)))),
   ];
   const icScore = allEPR.length ? mean(allEPR) : 0.85;
 
   // Step 4: Correlation Preservation (capped at 10 cols for performance)
-  const corrCols = numericCols.slice(0, 10);
+  // Fix #8: Only use valid (non-pseudonymized, non-null) numeric columns for correlation
+  const validNumericCols = numericCols.filter(col => {
+    const f = numFidelity.find(nf => nf.col === col);
+    return f && !f.excluded;
+  });
+  const corrCols = validNumericCols.slice(0, 10);
   let corrOrig: number[][] = [[1]], corrProc: number[][] = [[1]], deltaFrob = 0;
   if (corrCols.length >= 2) {
     const origColData: Record<string, number[]> = {};
@@ -521,7 +676,9 @@ export function computeUtilityMetrics(
   const cpScore = clamp(1 - deltaFrob);
 
   // Step 5: Predictive Utility
+  // Fix #5: If fewer than 2 valid numeric columns remain, flag as insufficient
   let puScore = 0.85;
+  let puInsufficient = false;
   if (corrCols.length >= 2) {
     const origColData: Record<string, number[]> = {};
     const procColData: Record<string, number[]> = {};
@@ -532,9 +689,14 @@ export function computeUtilityMetrics(
         : approxNumVals(procRows, col);
     }
     puScore = clamp(r2Retention(origColData, procColData, corrCols));
+  } else {
+    // Fix #5: Not enough valid numeric columns for meaningful PU assessment
+    puInsufficient = true;
+    // Use a conservative estimate based on available evidence rather than 0 or 1
+    puScore = validNumericCols.length === 1 ? 0.5 : 0.3;
   }
 
-  // Step 6: OUS composite
+  // Step 6: OUS composite — Fix #4: recomputed with corrected SFS
   const ousFrac = clamp(sfs * 0.30 + dsScore * 0.25 + icScore * 0.20 + cpScore * 0.15 + puScore * 0.10);
   const ous = Math.round(ousFrac * 1000) / 10;
 
@@ -556,19 +718,25 @@ export function computeUtilityMetrics(
     recommendations.push('Utility is below acceptable threshold. Consider reducing k, relaxing suppression limits, or switching to a softer generalisation method.');
   if (riskReduction !== null && riskReduction < 50)
     recommendations.push('Privacy protection is modest. Increase k parameter or add Differential Privacy (ε ≤ 1.0) as a complementary technique.');
-  const worstCols = [...numFidelity].sort((a, b) => a.sfs - b.sfs).slice(0, 3).map(f => f.col);
-  if (worstCols.length > 0)
-    recommendations.push(`Columns with highest distortion: ${worstCols.join(', ')}. Consider column-specific suppression thresholds.`);
+  if (pseudonymizedCols.length > 0)
+    recommendations.push(`${pseudonymizedCols.length} column(s) were pseudonymized and lost all statistical utility: ${pseudonymizedCols.join(', ')}. Consider generalisation (binning) instead of pseudonymisation for numeric columns to preserve analytical value.`);
+  const scoredWorstCols = [...scoredNumFidelity].sort((a, b) => a.sfs - b.sfs).slice(0, 3).map(f => f.col);
+  if (scoredWorstCols.length > 0)
+    recommendations.push(`Columns with highest distortion among scored columns: ${scoredWorstCols.join(', ')}. Consider column-specific suppression thresholds.`);
   if (deltaFrob > 0.15)
     recommendations.push('Correlation structure shows significant change (Frobenius distance > 0.15). This may impact multivariate analysis tasks.');
+  if (puInsufficient)
+    recommendations.push('Predictive Utility could not be assessed — fewer than 2 valid numeric columns remain after pseudonymisation. Re-run with a technique that preserves more numeric columns.');
   if (!recommendations.length)
     recommendations.push('Data utility is well-preserved. The processed dataset is suitable for the intended analytical tasks.');
 
   return {
     ous, grade, gradeLabel: getGradeLabel(grade), verdict,
     sfs, dsScore, icScore, cpScore, puScore,
+    puInsufficient,
     rowsOrig: origRows.length, rowsProc: procRows.length,
     commonCols, numericCols, catCols, suppressedCols,
+    pseudonymizedCols, allNullCols,
     numericFidelity: numFidelity, catFidelity,
     correlationCols: corrCols, corrOrig, corrProc, deltaFrob,
     riskBefore, riskAfter, riskReduction,

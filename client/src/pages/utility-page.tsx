@@ -36,6 +36,9 @@ interface NumFidelity {
   origP: number[]; procP: number[];
   histogram: HistogramData;
   generalised: boolean;
+  pseudonymized?: boolean;
+  allNull?: boolean;
+  excluded?: boolean;
 }
 
 interface CatFidelity {
@@ -47,8 +50,11 @@ interface CatFidelity {
 interface UtilityMetrics {
   ous: number; grade: string; gradeLabel: string; verdict: string;
   sfs: number; dsScore: number; icScore: number; cpScore: number; puScore: number;
+  puInsufficient?: boolean;
   rowsOrig: number; rowsProc: number;
   commonCols: string[]; numericCols: string[]; catCols: string[]; suppressedCols: string[];
+  pseudonymizedCols?: string[];
+  allNullCols?: string[];
   numericFidelity: NumFidelity[]; catFidelity: CatFidelity[];
   correlationCols: string[]; corrOrig: number[][]; corrProc: number[][];
   deltaFrob: number;
@@ -225,6 +231,73 @@ function StatBadgeColored({ val, lowGood }: { val: number; lowGood?: boolean }) 
 
 function FidelityRow({ f }: { f: NumFidelity }) {
   const [open, setOpen] = useState(false);
+
+  // Fix #7: All-null column — show N/A row, not a scoring row
+  if (f.allNull) {
+    return (
+      <tr className="border-b bg-muted/10" data-testid={`fidelity-row-${f.col}`}>
+        <td className="px-3 py-2 font-mono text-xs">
+          <span className="flex items-center gap-1">
+            {f.col}
+            <Badge variant="outline" className="text-[10px] py-0 px-1 ml-1 text-muted-foreground">null</Badge>
+          </span>
+        </td>
+        <td colSpan={7} className="px-3 py-2 text-xs text-muted-foreground italic">
+          N/A — column entirely empty in both datasets (excluded from scoring)
+        </td>
+      </tr>
+    );
+  }
+
+  // Fix #1: Pseudonymized column — show Type Mismatch row
+  if (f.pseudonymized) {
+    return (
+      <>
+        <tr
+          className="border-b bg-red-50 dark:bg-red-950/20 cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/30"
+          onClick={() => setOpen(o => !o)}
+          data-testid={`fidelity-row-${f.col}`}
+        >
+          <td className="px-3 py-2 font-mono text-xs">
+            <span className="flex items-center gap-1">
+              {open ? <ChevronUp className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
+              {f.col}
+              <Badge className="text-[10px] py-0 px-1 ml-1 bg-red-600 text-white border-0">pseudo</Badge>
+            </span>
+          </td>
+          <td className="px-3 py-2 text-xs text-right font-mono">{fmtN(f.origMean)}</td>
+          <td className="px-3 py-2 text-xs text-right font-mono text-muted-foreground">—</td>
+          <td className="px-3 py-2 text-xs text-right text-muted-foreground">—</td>
+          <td className="px-3 py-2 text-xs text-right text-muted-foreground">—</td>
+          <td className="px-3 py-2 text-xs text-muted-foreground">—</td>
+          <td className="px-3 py-2 text-xs text-muted-foreground">—</td>
+          <td className="px-3 py-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+              <span className="text-xs font-semibold text-red-600 dark:text-red-400">0.0%</span>
+            </div>
+          </td>
+        </tr>
+        {open && (
+          <tr className="bg-red-50/50 dark:bg-red-950/10 border-b">
+            <td colSpan={8} className="px-4 py-3">
+              <div className="flex items-start gap-2 text-xs text-red-700 dark:text-red-400">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold mb-1">⚠ Column converted to identifiers — not usable for statistical analysis</p>
+                  <p>This column was pseudonymized (e.g. replaced with PSEUDO_* tokens) during the privacy enhancement step. The original numeric values are no longer present in the processed dataset, making all statistical metrics meaningless.</p>
+                  <p className="mt-1.5 font-medium">Original stats (before pseudonymization):</p>
+                  <p>μ = {fmtN(f.origMean)}, σ = {fmtN(f.origStd)}, Range: [{fmtN(f.origMin)}, {fmtN(f.origMax)}]</p>
+                  <p className="mt-1.5 text-muted-foreground">Recommendation: Use generalisation (range binning) instead of pseudonymisation for numeric columns to preserve analytical utility.</p>
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <tr
@@ -308,6 +381,34 @@ function HistChart({ f }: { f: NumFidelity }) {
       Processed: h.procCounts[i] ?? 0,
     }));
   }, [f]);
+
+  // Fix #1 / #7: Show informative placeholders for excluded columns
+  if (f.allNull) {
+    return (
+      <div>
+        <p className="text-xs font-semibold mb-1 text-muted-foreground">{f.col}</p>
+        <div className="h-[130px] flex items-center justify-center bg-muted/20 rounded text-xs text-muted-foreground italic border border-dashed">
+          N/A — column entirely empty
+        </div>
+      </div>
+    );
+  }
+  if (f.pseudonymized) {
+    return (
+      <div>
+        <p className="text-xs font-semibold mb-1 flex items-center gap-1 text-red-600 dark:text-red-400">
+          {f.col}
+          <span className="text-[10px] bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded font-normal">pseudonymized</span>
+        </p>
+        <div className="h-[130px] flex flex-col items-center justify-center bg-red-50 dark:bg-red-950/20 rounded border border-dashed border-red-300 gap-1">
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+          <p className="text-[10px] text-red-600 dark:text-red-400 text-center px-2">No numeric data — column converted to identifiers</p>
+          <p className="text-[10px] text-muted-foreground">JSD = 1.000 · Wasserstein = 1.000 · EPR = 0.000</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!data.length) return <p className="text-xs text-muted-foreground">No data</p>;
   return (
     <div>
@@ -664,13 +765,29 @@ export default function UtilityPage() {
                     </div>
                   </div>
 
-                  {/* 5 component score bars */}
-                  <div className="grid grid-cols-5 gap-4 mb-3">
+                  {/* 5 component score bars + Risk Reduction card (Fix #6) */}
+                  <div className="grid grid-cols-6 gap-4 mb-3">
                     <ScoreBar label="Stat Fidelity" value={m.sfs} icon={<Activity className="h-3 w-3" />} />
                     <ScoreBar label="Distribution" value={m.dsScore} icon={<BarChart2 className="h-3 w-3" />} />
                     <ScoreBar label="Info Content" value={m.icScore} icon={<Info className="h-3 w-3" />} />
                     <ScoreBar label="Correlation" value={m.cpScore} icon={<GitCompare className="h-3 w-3" />} />
                     <ScoreBar label="Predictive" value={m.puScore} icon={<Target className="h-3 w-3" />} />
+                    {/* Fix #6: Risk Reduction metric card */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1"><Shield className="h-3 w-3" />Risk Reduction</span>
+                        {m.riskReduction != null
+                          ? <span className={`font-semibold ${m.riskReduction >= 50 ? "text-green-600 dark:text-green-400" : m.riskReduction >= 25 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                              {m.riskReduction.toFixed(1)}%
+                            </span>
+                          : <span className="text-muted-foreground text-[10px]">N/A</span>
+                        }
+                      </div>
+                      {m.riskReduction != null
+                        ? <Progress value={m.riskReduction} className="h-1.5" />
+                        : <p className="text-[10px] text-muted-foreground leading-tight">Run Risk Assessment first</p>
+                      }
+                    </div>
                   </div>
 
                   {/* Balance bar */}
@@ -938,19 +1055,25 @@ export default function UtilityPage() {
                       <CardContent>
                         <div className="grid grid-cols-3 gap-3 mb-4">
                           {[
-                            { label: "Statistical Fidelity", score: m.sfs, weight: "30%", desc: "Mean preservation, variance, percentiles" },
-                            { label: "Distribution Similarity", score: m.dsScore, weight: "25%", desc: "KS test, JSD, Wasserstein-1" },
-                            { label: "Information Content", score: m.icScore, weight: "20%", desc: "Shannon entropy preservation (EPR)" },
-                            { label: "Correlation Preservation", score: m.cpScore, weight: "15%", desc: "Pearson matrix Frobenius distance" },
-                            { label: "Predictive Utility", score: m.puScore, weight: "10%", desc: "R² retention proxy" },
-                            { label: "Overall Utility (OUS)", score: m.ous / 100, weight: "100%", desc: "Weighted composite of all 5 dimensions" },
+                            { label: "Statistical Fidelity", score: m.sfs, weight: "30%", desc: "Mean preservation, variance, percentiles", insufficient: false },
+                            { label: "Distribution Similarity", score: m.dsScore, weight: "25%", desc: "KS test, JSD, Wasserstein-1", insufficient: false },
+                            { label: "Information Content", score: m.icScore, weight: "20%", desc: "Shannon entropy preservation (EPR)", insufficient: false },
+                            { label: "Correlation Preservation", score: m.cpScore, weight: "15%", desc: "Pearson matrix Frobenius distance", insufficient: false },
+                            { label: "Predictive Utility", score: m.puScore, weight: "10%", desc: m.puInsufficient ? "Insufficient numeric columns for assessment" : "R² retention proxy", insufficient: !!m.puInsufficient },
+                            { label: "Overall Utility (OUS)", score: m.ous / 100, weight: "100%", desc: "Weighted composite of all 5 dimensions", insufficient: false },
                           ].map(item => (
-                            <div key={item.label} className="p-3 rounded-lg border bg-muted/20">
+                            <div key={item.label} className={`p-3 rounded-lg border ${item.insufficient ? "bg-amber-50 dark:bg-amber-950/20 border-amber-300" : "bg-muted/20"}`}>
                               <div className="flex justify-between items-start mb-2">
                                 <p className="text-xs font-semibold leading-tight">{item.label}</p>
                                 <Badge variant="outline" className="text-[10px] shrink-0 ml-1">{item.weight}</Badge>
                               </div>
-                              <p className={`text-2xl font-bold ${scoreColor(item.score)}`}>{fmt2(item.score)}</p>
+                              {item.insufficient ? (
+                                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium leading-snug">
+                                  Insufficient numeric columns for predictive utility assessment
+                                </p>
+                              ) : (
+                                <p className={`text-2xl font-bold ${scoreColor(item.score)}`}>{fmt2(item.score)}</p>
+                              )}
                               <p className="text-[10px] text-muted-foreground mt-1">{item.desc}</p>
                             </div>
                           ))}
