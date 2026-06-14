@@ -156,7 +156,7 @@ function generateReport(m: UtilityMetrics): string {
   </div>
   <table><tr><th>Records (Orig)</th><th>Records (Proc)</th><th>Suppression</th><th>Columns</th></tr>
   <tr><td>${m.rowsOrig}</td><td>${m.rowsProc}</td><td>${m.rowsOrig - m.rowsProc} (${suppPct}%)</td><td>${m.numericCols.length} numeric / ${m.catCols.length} categorical</td></tr></table>
-  ${m.riskReduction !== null ? `<p>Re-identification risk reduced by approximately <strong>${m.riskReduction.toFixed(1)}%</strong>.</p>` : ""}
+  ${m.riskReduction != null ? `<p>Re-identification risk reduced by approximately <strong>${m.riskReduction.toFixed(1)}%</strong>.</p>` : ""}
 </section>
 <section>
   <h2>2. Component Scores</h2>
@@ -187,7 +187,7 @@ ${m.warnings.length ? `<section><h2>Warnings</h2>${m.warnings.map(w => `<div cla
   <tr><td>Information Content (IC)</td><td>${fmt2(m.icScore)}</td><td>≥ 70%</td><td>${m.icScore >= 0.7 ? "✅" : "❌"}</td></tr>
   <tr><td>Record Suppression Rate</td><td>${suppPct}%</td><td>≤ 5%</td><td>${parseFloat(suppPct) <= 5 ? "✅" : "⚠"}</td></tr>
   <tr><td>Correlation Preserved</td><td>${fmt2(m.cpScore)}</td><td>≥ 70%</td><td>${m.cpScore >= 0.7 ? "✅" : "❌"}</td></tr>
-  ${m.riskReduction !== null ? `<tr><td>Risk Reduction</td><td>${m.riskReduction.toFixed(1)}%</td><td>≥ 50%</td><td>${m.riskReduction >= 50 ? "✅" : "⚠"}</td></tr>` : ""}
+  ${m.riskReduction != null ? `<tr><td>Risk Reduction</td><td>${m.riskReduction.toFixed(1)}%</td><td>≥ 50%</td><td>${m.riskReduction >= 50 ? "✅" : "⚠"}</td></tr>` : ""}
   </table>
 </section>
 <section>
@@ -415,6 +415,23 @@ export default function UtilityPage() {
   const raw = active?.metrics ?? null;
   const m: UtilityMetrics | null = raw ? {
     ...raw,
+    ous: raw.ous ?? 0,
+    grade: raw.grade ?? "F",
+    gradeLabel: raw.gradeLabel ?? "",
+    verdict: raw.verdict ?? "",
+    sfs: raw.sfs ?? 0,
+    dsScore: raw.dsScore ?? 0,
+    icScore: raw.icScore ?? 0,
+    cpScore: raw.cpScore ?? 0,
+    puScore: raw.puScore ?? 0,
+    rowsOrig: raw.rowsOrig ?? 0,
+    rowsProc: raw.rowsProc ?? 0,
+    deltaFrob: raw.deltaFrob ?? 0,
+    riskBefore: raw.riskBefore ?? null,
+    riskAfter: raw.riskAfter ?? null,
+    riskReduction: raw.riskReduction ?? null,
+    technique: raw.technique ?? "",
+    datasetName: raw.datasetName ?? "",
     numericFidelity: raw.numericFidelity ?? [],
     catFidelity: raw.catFidelity ?? [],
     correlationCols: raw.correlationCols ?? [],
@@ -433,7 +450,7 @@ export default function UtilityPage() {
     return m.corrOrig.map((row, i) => row.map((v, j) => v - (m.corrProc[i]?.[j] ?? v)));
   }, [m]);
 
-  const suppPct = m ? (m.rowsOrig - m.rowsProc) / m.rowsOrig * 100 : 0;
+  const suppPct = m && m.rowsOrig > 0 ? (m.rowsOrig - m.rowsProc) / m.rowsOrig * 100 : 0;
 
   const filteredOps = selectedDataset
     ? operations.filter((o: any) => o.datasetId === Number(selectedDataset))
@@ -444,7 +461,7 @@ export default function UtilityPage() {
     { label: "Information Content ≥ 70%", pass: m.icScore >= 0.7, val: fmt2(m.icScore) },
     { label: "Correlation Preserved ≥ 70%", pass: m.cpScore >= 0.7, val: fmt2(m.cpScore) },
     { label: "Record Suppression ≤ 5%", pass: suppPct <= 5, val: `${suppPct.toFixed(1)}%` },
-    { label: "Risk Reduction ≥ 50%", pass: (m.riskReduction ?? 0) >= 50, val: m.riskReduction !== null ? `${m.riskReduction.toFixed(1)}%` : "N/A" },
+    { label: "Risk Reduction ≥ 50%", pass: (m.riskReduction ?? 0) >= 50, val: m.riskReduction != null ? `${m.riskReduction.toFixed(1)}%` : "N/A" },
     { label: "Distribution Preserved ≥ 70%", pass: m.dsScore >= 0.7, val: fmt2(m.dsScore) },
   ] : [];
 
@@ -857,7 +874,7 @@ export default function UtilityPage() {
                           <CardTitle className="text-sm">Risk-Utility Trade-off</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          {m.riskBefore !== null ? (
+                          {m.riskBefore != null ? (
                             <ResponsiveContainer width="100%" height={220}>
                               <ScatterChart margin={{ top: 8, right: 24, left: 0, bottom: 24 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -948,8 +965,8 @@ export default function UtilityPage() {
                           <div className="grid grid-cols-3 gap-3 mb-4">
                             {[
                               { label: "Risk Before", val: `${(m.riskBefore * 100).toFixed(1)}%`, cls: "text-red-600" },
-                              { label: "Risk After (est.)", val: m.riskAfter !== null ? `${(m.riskAfter * 100).toFixed(1)}%` : "—", cls: "text-green-600" },
-                              { label: "Risk Reduction", val: m.riskReduction !== null ? `${m.riskReduction.toFixed(1)}%` : "—", cls: "text-blue-600" },
+                              { label: "Risk After (est.)", val: m.riskAfter != null ? `${(m.riskAfter * 100).toFixed(1)}%` : "—", cls: "text-green-600" },
+                              { label: "Risk Reduction", val: m.riskReduction != null ? `${m.riskReduction.toFixed(1)}%` : "—", cls: "text-blue-600" },
                             ].map(item => (
                               <div key={item.label} className="p-3 rounded border bg-muted/20 text-center">
                                 <p className="text-xs text-muted-foreground">{item.label}</p>
