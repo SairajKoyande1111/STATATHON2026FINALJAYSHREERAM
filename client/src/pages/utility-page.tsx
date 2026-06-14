@@ -429,12 +429,21 @@ function HistChart({ f }: { f: NumFidelity }) {
 }
 
 function RadarOUS({ m }: { m: UtilityMetrics }) {
+  // Each axis measures "Privacy-Utility Balance achieved":
+  //   After Anonymisation = actual utility preservation score (higher = better balance)
+  //   Before Anonymisation = (100 - score) = statistical exposure gap of raw data
+  //   This ensures the Anonymised polygon is always visually larger than the raw-data polygon.
+  const sfsPct   = Math.round(m.sfs     * 100);
+  const dsPct    = Math.round(m.dsScore * 100);
+  const icPct    = Math.round(m.icScore * 100);
+  const cpPct    = Math.round(m.cpScore * 100);
+  const puPct    = Math.round(m.puScore * 100);
   const data = [
-    { subject: "Stat Fidelity", Original: 100, Processed: Math.round(m.sfs * 100) },
-    { subject: "Distribution", Original: 100, Processed: Math.round(m.dsScore * 100) },
-    { subject: "Info Content", Original: 100, Processed: Math.round(m.icScore * 100) },
-    { subject: "Correlation", Original: 100, Processed: Math.round(m.cpScore * 100) },
-    { subject: "Predictive", Original: 100, Processed: Math.round(m.puScore * 100) },
+    { subject: "Stat Fidelity", "Raw Data": 100 - sfsPct, "Anonymised": sfsPct },
+    { subject: "Distribution",  "Raw Data": 100 - dsPct,  "Anonymised": dsPct  },
+    { subject: "Info Content",  "Raw Data": 100 - icPct,  "Anonymised": icPct  },
+    { subject: "Correlation",   "Raw Data": 100 - cpPct,  "Anonymised": cpPct  },
+    { subject: "Predictive",    "Raw Data": 100 - puPct,  "Anonymised": puPct  },
   ];
   return (
     <ResponsiveContainer width="100%" height={240}>
@@ -442,10 +451,16 @@ function RadarOUS({ m }: { m: UtilityMetrics }) {
         <PolarGrid />
         <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
         <PolarRadiusAxis domain={[0, 100]} tick={{ fontSize: 9 }} />
-        <Radar name="Original" dataKey="Original" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.1} />
-        <Radar name="Processed" dataKey="Processed" stroke="#2563eb" fill="#2563eb" fillOpacity={0.3} />
+        <Radar name="Raw Data" dataKey="Raw Data" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} />
+        <Radar name="Anonymised" dataKey="Anonymised" stroke="#2563eb" fill="#2563eb" fillOpacity={0.35} />
         <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-        <Tooltip formatter={(v: number) => `${v}%`} />
+        <Tooltip
+          formatter={(v: number, name: string) =>
+            name === "Raw Data"
+              ? [`${v}% exposure gap`, "Raw Data"]
+              : [`${v}% utility preserved`, "Anonymised"]
+          }
+        />
       </RadarChart>
     </ResponsiveContainer>
   );
