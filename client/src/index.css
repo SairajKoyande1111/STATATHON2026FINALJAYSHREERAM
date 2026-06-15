@@ -288,3 +288,10 @@
     inset: -1px;
   }
 }
+
+/* ── Collapsed sidebar: enlarge icon-mode nav buttons so icons are big ── */
+[data-collapsible="icon"] [data-sidebar="menu-button"] {
+  width: 3rem !important;
+  height: 3rem !important;
+  padding: 0.375rem !important;
+}

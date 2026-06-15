@@ -46,12 +46,12 @@ const poppins: React.CSSProperties = {
   fontFamily: "'Poppins', sans-serif",
 };
 
-function NavIcon({ src, alt }: { src: string; alt: string }) {
+function NavIcon({ src, alt, collapsed }: { src: string; alt: string; collapsed?: boolean }) {
   return (
     <img
       src={src}
       alt={alt}
-      className="h-[22px] w-[22px] object-contain shrink-0"
+      className={collapsed ? "h-8 w-8 object-contain shrink-0" : "h-[22px] w-[22px] object-contain shrink-0"}
       style={{ filter: "brightness(0)" }}
     />
   );
@@ -60,7 +60,8 @@ function NavIcon({ src, alt }: { src: string; alt: string }) {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
-  const { open, toggleSidebar } = useSidebar();
+  const { open, toggleSidebar, state } = useSidebar();
+  const collapsed = state === "collapsed";
 
   const getInitials = (name: string) =>
     name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -124,7 +125,7 @@ export function AppSidebar() {
                         style={poppins}
                       >
                         <Link href={item.url}>
-                          <NavIcon src={item.icon} alt={item.title} />
+                          <NavIcon src={item.icon} alt={item.title} collapsed={collapsed} />
                           <span
                             className={[
                               "text-[15px] leading-snug tracking-wide",
@@ -169,7 +170,7 @@ export function AppSidebar() {
                         style={poppins}
                       >
                         <Link href={item.url}>
-                          <NavIcon src={item.icon} alt={item.title} />
+                          <NavIcon src={item.icon} alt={item.title} collapsed={collapsed} />
                           <span
                             className={[
                               "text-[15px] leading-snug tracking-wide",
@@ -192,37 +193,45 @@ export function AppSidebar() {
         {/* ── Footer ── */}
         <SidebarFooter className="border-t border-slate-100 p-4" style={poppins}>
           <div className="flex flex-col gap-4">
-            <div className="flex justify-center">
-              <img
-                src="/mospi-footer-logo.png"
-                alt="Ministry of Statistics"
-                className="w-full h-auto object-contain"
-              />
-            </div>
-            <div className="flex items-center gap-3">
+            {/* MoSPI logo — hidden when collapsed */}
+            {!collapsed && (
+              <div className="flex justify-center">
+                <img
+                  src="/mospi-footer-logo.png"
+                  alt="Ministry of Statistics"
+                  className="w-full h-auto object-contain"
+                />
+              </div>
+            )}
+            <div className={collapsed ? "flex justify-center" : "flex items-center gap-3"}>
               <Avatar className="h-9 w-9 shrink-0">
                 <AvatarFallback className="bg-blue-50 text-blue-700 text-sm font-semibold" style={poppins}>
                   {user ? getInitials(user.fullName) : "U"}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-sm font-semibold text-black truncate" style={poppins}>
-                  {user?.fullName || "User"}
-                </span>
-                <span className="text-xs text-slate-500 truncate" style={poppins}>
-                  Admin
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => logoutMutation.mutate()}
-                disabled={logoutMutation.isPending}
-                data-testid="button-logout"
-                className="shrink-0"
-              >
-                <LogOut className="h-4 w-4 text-slate-500" />
-              </Button>
+              {/* Name, role and logout — hidden when collapsed */}
+              {!collapsed && (
+                <>
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-sm font-semibold text-black truncate" style={poppins}>
+                      {user?.fullName || "User"}
+                    </span>
+                    <span className="text-xs text-slate-500 truncate" style={poppins}>
+                      Admin
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => logoutMutation.mutate()}
+                    disabled={logoutMutation.isPending}
+                    data-testid="button-logout"
+                    className="shrink-0"
+                  >
+                    <LogOut className="h-4 w-4 text-slate-500" />
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </SidebarFooter>
