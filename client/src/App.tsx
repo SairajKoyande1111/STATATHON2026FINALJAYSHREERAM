@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ThemeProvider } from "@/hooks/use-theme";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { ProtectedRoute } from "@/lib/protected-route";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
@@ -38,14 +39,27 @@ function Router() {
   );
 }
 
+const sidebarStyle = {
+  "--sidebar-width": "16rem",
+  "--sidebar-width-icon": "3.5rem",
+} as React.CSSProperties;
+
+function getInitialSidebarOpen(): boolean {
+  const match = document.cookie.match(/sidebar_state=([^;]+)/);
+  if (match) return match[1] === "true";
+  return true;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
           <TooltipProvider>
-            <Router />
-            <Toaster />
+            <SidebarProvider defaultOpen={getInitialSidebarOpen()} style={sidebarStyle}>
+              <Router />
+              <Toaster />
+            </SidebarProvider>
           </TooltipProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -68,9 +68,25 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-slate-200 shadow-sm">
-      <div className="flex flex-col h-full">
+      {/* Outer wrapper: relative + overflow-visible so the toggle button can hang outside */}
+      <div className="relative flex flex-col h-full overflow-visible">
 
-        {/* ── Header: logo + toggle button anchored to bottom edge ── */}
+        {/* ── Toggle circle — vertically centred on the right edge of the sidebar ── */}
+        <button
+          onClick={toggleSidebar}
+          data-testid="button-sidebar-collapse"
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-50
+                     h-5 w-5 rounded-full bg-white border border-slate-200 shadow-md
+                     flex items-center justify-center
+                     hover:bg-slate-50 transition-colors"
+          aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
+        >
+          {open
+            ? <ChevronLeft  className="h-2.5 w-2.5 text-slate-700" />
+            : <ChevronRight className="h-2.5 w-2.5 text-slate-700" />}
+        </button>
+
+        {/* ── Header ── */}
         <SidebarHeader className="relative border-b border-slate-100 overflow-visible"
           style={{ padding: collapsed ? "12px 8px" : "12px 16px" }}
         >
@@ -86,21 +102,6 @@ export function AppSidebar() {
               }}
             />
           </div>
-
-          {/* Toggle circle — anchored to the bottom-right of the header, z-50 so it's always on top */}
-          <button
-            onClick={toggleSidebar}
-            data-testid="button-sidebar-collapse"
-            className="absolute -bottom-3.5 right-3 z-50
-                       h-7 w-7 rounded-full bg-white border border-slate-200 shadow-md
-                       flex items-center justify-center
-                       hover:bg-slate-50 transition-colors"
-            aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-          >
-            {open
-              ? <ChevronLeft  className="h-3.5 w-3.5 text-slate-700" />
-              : <ChevronRight className="h-3.5 w-3.5 text-slate-700" />}
-          </button>
         </SidebarHeader>
 
         {/* ── Navigation ── */}

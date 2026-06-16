@@ -1,5 +1,5 @@
 import React, { ReactNode } from "react";
-import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
+import { SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Bell } from "lucide-react";
@@ -23,16 +23,10 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, title, breadcrumbs = [] }: DashboardLayoutProps) {
-  const sidebarStyle = {
-    "--sidebar-width": "16rem",
-    "--sidebar-width-icon": "3.5rem",
-  } as React.CSSProperties;
-
   return (
-    <SidebarProvider style={sidebarStyle}>
-      <div className="flex min-h-screen w-full">
-        <AppSidebar />
-        <SidebarInset className="flex flex-col flex-1">
+    <div className="flex min-h-screen w-full">
+      <AppSidebar />
+      <SidebarInset className="flex flex-col flex-1">
           <header className="sticky top-0 z-50 flex h-24 items-center gap-4 border-b bg-white dark:bg-slate-900 px-6">
             <div className="flex items-center gap-4 flex-1 h-full py-2 overflow-visible">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
@@ -91,8 +85,7 @@ export function DashboardLayout({ children, title, breadcrumbs = [] }: Dashboard
               <span>Developed by AIRAVATA Technologies</span>
             </div>
           </footer>
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
+      </SidebarInset>
+    </div>
   );
 }

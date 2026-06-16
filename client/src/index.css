@@ -289,9 +289,15 @@
   }
 }
 
-/* ── Collapsed sidebar: enlarge icon-mode nav buttons so icons are big ── */
+/* ── Collapsed sidebar: nav buttons 32px, centred so toggle button clears them ── */
 [data-collapsible="icon"] [data-sidebar="menu-button"] {
-  width: 3rem !important;
-  height: 3rem !important;
-  padding: 0.375rem !important;
+  width: 2rem !important;
+  height: 2rem !important;
+  padding: 0.2rem !important;
+}
+
+/* Centre each menu item in the narrow icon column */
+[data-collapsible="icon"] [data-sidebar="menu-item"] {
+  display: flex !important;
+  justify-content: center !important;
 }
