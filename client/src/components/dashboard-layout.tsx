@@ -1,10 +1,6 @@
 import React, { ReactNode } from "react";
-import { SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
+import { SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Bell } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,8 +9,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-
-import moeLogo from "@assets/moe_logo.png";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -27,64 +21,41 @@ export function DashboardLayout({ children, title, breadcrumbs = [] }: Dashboard
     <div className="flex min-h-screen w-full">
       <AppSidebar />
       <SidebarInset className="flex flex-col flex-1">
-          <header className="sticky top-0 z-50 flex h-24 items-center gap-4 border-b bg-white dark:bg-slate-900 px-6">
-            <div className="flex items-center gap-4 flex-1 h-full py-2 overflow-visible">
-              <SidebarTrigger data-testid="button-sidebar-toggle" />
-              <Separator orientation="vertical" className="h-10" />
-              
-              <div className="flex items-center gap-8 h-full overflow-visible">
-                <div className="flex items-center gap-3 border-r border-slate-200 dark:border-slate-800 pr-8 h-full overflow-visible">
-                  <img src="/attached_assets/Government_of_India_logo.svg" alt="Government of India" className="h-14 w-auto object-contain" style={{ display: 'block' }} />
-                </div>
-
-                <div className="flex items-center gap-6 border-r border-slate-200 dark:border-slate-800 pr-8 h-full overflow-visible">
-                  <div className="flex items-center gap-3">
-                    <img src="/attached_assets/Ministry_of_Education_India.svg" alt="Ministry of Education" className="h-14 w-auto object-contain" style={{ display: 'block' }} />
-                  </div>
-                  <div className="h-10 w-px bg-slate-200 dark:bg-slate-800" />
-                  <img src="/attached_assets/innovation_cell_logo.png" alt="Innovation Cell" className="h-14 w-auto object-contain min-w-[100px]" />
-                </div>
-
-                <div className="flex items-center gap-2 h-full overflow-visible">
-                  <img src="/attached_assets/statathon_logo.png" alt="Statathon Logo" className="h-14 w-auto object-contain min-w-[120px]" />
-                </div>
-              </div>
+        <main className="flex-1 overflow-auto p-8" style={{ fontFamily: "'Poppins', sans-serif" }}>
+          <div className="mb-8 flex items-start justify-between">
+            <div>
+              <h1
+                className="text-3xl font-semibold text-slate-900 dark:text-white tracking-tight"
+                data-testid={`heading-${title.toLowerCase().replace(/\s+/g, "-")}`}
+                style={{ fontFamily: "'Poppins', sans-serif" }}
+              >
+                {title}
+              </h1>
             </div>
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem><BreadcrumbLink href="/">Home</BreadcrumbLink></BreadcrumbItem>
+                {breadcrumbs.length > 0 && <BreadcrumbSeparator />}
+                {breadcrumbs.map((crumb, index) => [
+                  index > 0 ? <BreadcrumbSeparator key={`sep-${index}`} /> : null,
+                  <BreadcrumbItem key={`item-${index}`}>
+                    {crumb.href
+                      ? <BreadcrumbLink href={crumb.href}>{crumb.label}</BreadcrumbLink>
+                      : <BreadcrumbPage>{crumb.label}</BreadcrumbPage>}
+                  </BreadcrumbItem>,
+                ]).flat()}
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
+          {children}
+        </main>
 
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" data-testid="button-notifications">
-                <Bell className="h-5 w-5" />
-                <span className="sr-only">Notifications</span>
-              </Button>
-              <ThemeToggle />
-            </div>
-          </header>
-
-          <main className="flex-1 overflow-auto p-6">
-            <div className="mb-6 flex items-center justify-between">
-              <h1 className="text-2xl font-bold" data-testid={`heading-${title.toLowerCase().replace(/\s+/g, "-")}`}>{title}</h1>
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem><BreadcrumbLink href="/">Home</BreadcrumbLink></BreadcrumbItem>
-                  {breadcrumbs.length > 0 && <BreadcrumbSeparator />}
-                  {breadcrumbs.map((crumb, index) => [
-                    index > 0 ? <BreadcrumbSeparator key={`sep-${index}`} /> : null,
-                    <BreadcrumbItem key={`item-${index}`}>
-                      {crumb.href ? <BreadcrumbLink href={crumb.href}>{crumb.label}</BreadcrumbLink> : <BreadcrumbPage>{crumb.label}</BreadcrumbPage>}
-                    </BreadcrumbItem>
-                  ]).flat()}
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
-            {children}
-          </main>
-
-          <footer className="border-t bg-muted/30 px-6 py-3">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Government of India - Ministry of Electronics and Information Technology</span>
-              <span>Developed by AIRAVATA Technologies</span>
-            </div>
-          </footer>
+        <footer className="border-t bg-slate-50 dark:bg-slate-900 px-8 py-3">
+          <div className="flex items-center justify-between text-xs text-slate-400" style={{ fontFamily: "'Poppins', sans-serif" }}>
+            <span>Government of India — Ministry of Electronics and Information Technology</span>
+            <span>Developed by AIRAVATA Technologies</span>
+          </div>
+        </footer>
       </SidebarInset>
     </div>
   );
