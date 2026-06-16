@@ -170,9 +170,9 @@ export default function UploadPage() {
   if (viewDataset) {
     return (
       <DashboardLayout title="Data Upload" breadcrumbs={[{ label: "Data Upload" }]}>
-        <div className="space-y-6" style={poppins}>
-          {/* Back bar */}
-          <div className="flex items-center justify-between">
+        <div className="flex flex-col min-w-0 overflow-hidden" style={{ ...poppins, height: "calc(100vh - 160px)" }}>
+          {/* Back bar — fixed, does not scroll */}
+          <div className="flex items-center justify-between mb-5 shrink-0">
             <button
               onClick={() => setViewDataset(null)}
               className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm font-medium"
@@ -187,8 +187,8 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* Stats row */}
-          <div className="grid grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-white">
+          {/* Stats row — fixed, does not scroll */}
+          <div className="grid grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-white shrink-0 mb-5">
             {[
               { label: "Quality Score", value: viewDataset.qualityScore ? `${Math.round(viewDataset.qualityScore * 100)}%` : "—" },
               { label: "Completeness", value: viewDataset.completenessScore ? `${Math.round(viewDataset.completenessScore * 100)}%` : "—" },
@@ -202,21 +202,22 @@ export default function UploadPage() {
             ))}
           </div>
 
-          {/* Data table — fills remaining height */}
-          <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white flex flex-col" style={{ minHeight: "calc(100vh - 340px)" }}>
+          {/* Data table — only this section scrolls (rows & columns) */}
+          <div className="border border-slate-100 rounded-2xl bg-white flex flex-col flex-1 min-h-0 overflow-hidden">
             {loadingPreview || !previewData ? (
               <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
               </div>
             ) : (
               <>
-                <div className="flex-1 overflow-auto">
-                  <table className="w-full text-sm" style={poppins}>
+                {/* Scrollable area — ONLY the table rows+columns scroll here */}
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <table className="text-sm" style={{ ...poppins, minWidth: "100%" }}>
                     <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-100">
                       <tr>
-                        <th className="px-4 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-12 border-r border-slate-100" style={poppins}>#</th>
+                        <th className="px-4 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-12 border-r border-slate-100 bg-slate-50" style={poppins}>#</th>
                         {previewData.columns.map(col => (
-                          <th key={col} className="px-4 py-3.5 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider min-w-[130px] whitespace-nowrap" style={poppins}>
+                          <th key={col} className="px-4 py-3.5 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider min-w-[130px] whitespace-nowrap bg-slate-50" style={poppins}>
                             {col}
                           </th>
                         ))}
@@ -236,6 +237,7 @@ export default function UploadPage() {
                     </tbody>
                   </table>
                 </div>
+                {/* Footer — fixed, does not scroll */}
                 <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 shrink-0">
                   <p className="text-xs text-slate-400 font-medium" style={poppins}>
                     Showing {previewData.rows.length} of {viewDataset.rowCount.toLocaleString()} rows
@@ -272,7 +274,7 @@ export default function UploadPage() {
       <div className="space-y-10" style={poppins}>
 
         {/* ── Two-column: Upload zone (left) | Guidelines (right) ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 items-start">
 
           {/* LEFT — upload zone */}
           <div className="flex flex-col gap-4">
@@ -336,12 +338,12 @@ export default function UploadPage() {
           {/* RIGHT — guidelines 2×2 aligned with the dropzone */}
           <div className="flex flex-col gap-4">
             <h2 className="text-xl font-semibold text-slate-800" style={poppins}>Upload Guidelines</h2>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-7">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-8">
               {GUIDELINES.map(({ img, title, items }) => (
                 <div key={title}>
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <img src={img} alt={title} className="h-4 w-4 shrink-0 object-contain" />
-                    <span className="text-[14px] font-semibold text-slate-800" style={poppins}>{title}</span>
+                  <div className="flex items-center gap-3 mb-3">
+                    <img src={img} alt={title} className="h-7 w-7 shrink-0 object-contain" />
+                    <span className="text-[15px] font-semibold text-slate-800" style={poppins}>{title}</span>
                   </div>
                   <ul className="space-y-1">
                     {items.map(item => (
@@ -402,9 +404,7 @@ export default function UploadPage() {
                             onClick={() => openFullView(ds)}
                             className="flex items-center gap-2.5 text-left group"
                           >
-                            <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                              <img src={iconFolder} alt="file" className="h-4 w-4 object-contain" />
-                            </div>
+                            <img src={iconFolder} alt="file" className="h-5 w-5 shrink-0 object-contain" />
                             <span className="text-[14px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors truncate max-w-[180px]" style={poppins}>
                               {ds.originalName}
                             </span>
