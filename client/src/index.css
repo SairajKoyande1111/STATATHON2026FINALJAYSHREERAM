@@ -289,10 +289,10 @@
   }
 }
 
-/* ── Collapsed sidebar: nav buttons 32px, centred so toggle button clears them ── */
+/* ── Collapsed sidebar: nav buttons 40px, centred so toggle button clears them ── */
 [data-collapsible="icon"] [data-sidebar="menu-button"] {
-  width: 2rem !important;
-  height: 2rem !important;
+  width: 2.5rem !important;
+  height: 2.5rem !important;
   padding: 0.2rem !important;
 }
 

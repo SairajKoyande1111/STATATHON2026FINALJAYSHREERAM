@@ -51,7 +51,7 @@ function NavIcon({ src, alt, collapsed }: { src: string; alt: string; collapsed?
     <img
       src={src}
       alt={alt}
-      className={collapsed ? "h-8 w-8 object-contain shrink-0" : "h-[22px] w-[22px] object-contain shrink-0"}
+      className={collapsed ? "h-9 w-9 object-contain shrink-0" : "h-[26px] w-[26px] object-contain shrink-0"}
       style={{ filter: "brightness(0)" }}
     />
   );
@@ -135,7 +135,7 @@ export function AppSidebar() {
                           <NavIcon src={item.icon} alt={item.title} collapsed={collapsed} />
                           <span
                             className={[
-                              "text-[15px] leading-snug tracking-wide",
+                              "text-[16px] leading-snug tracking-wide",
                               active ? "font-semibold text-blue-700" : "font-medium text-black",
                             ].join(" ")}
                             style={poppins}
@@ -180,7 +180,7 @@ export function AppSidebar() {
                           <NavIcon src={item.icon} alt={item.title} collapsed={collapsed} />
                           <span
                             className={[
-                              "text-[15px] leading-snug tracking-wide",
+                              "text-[16px] leading-snug tracking-wide",
                               active ? "font-semibold text-blue-700" : "font-medium text-black",
                             ].join(" ")}
                             style={poppins}
