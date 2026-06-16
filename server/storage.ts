@@ -1,258 +1,268 @@
-import {
-  users, datasets, riskAssessments, privacyOperations,
-  utilityMeasurements, reports, configProfiles, activityLogs,
-  type User, type InsertUser,
-  type Dataset, type InsertDataset,
-  type RiskAssessment, type InsertRiskAssessment,
-  type PrivacyOperation, type InsertPrivacyOperation,
-  type UtilityMeasurement, type InsertUtilityMeasurement,
-  type Report, type InsertReport,
-  type ConfigProfile, type InsertConfigProfile,
-  type ActivityLog, type InsertActivityLog,
-} from "@shared/schema";
-import { db } from "./db";
-import { eq, desc, and, inArray } from "drizzle-orm";
 import session from "express-session";
-import connectPg from "connect-pg-simple";
-import { pool } from "./db";
+import MongoStore from "connect-mongo";
+import {
+  UserModel,
+  DatasetModel,
+  RiskAssessmentModel,
+  PrivacyOperationModel,
+  UtilityMeasurementModel,
+  ReportModel,
+  ConfigProfileModel,
+  ActivityLogModel,
+} from "./db";
+import type {
+  User, InsertUser,
+  Dataset, InsertDataset,
+  RiskAssessment, InsertRiskAssessment,
+  PrivacyOperation, InsertPrivacyOperation,
+  UtilityMeasurement, InsertUtilityMeasurement,
+  Report, InsertReport,
+  ConfigProfile, InsertConfigProfile,
+  ActivityLog, InsertActivityLog,
+} from "@shared/schema";
 
-const PostgresSessionStore = connectPg(session);
+if (!process.env.MONGODB_URI) {
+  throw new Error("MONGODB_URI must be set.");
+}
 
 export interface IStorage {
   sessionStore: session.Store;
-  
-  // Users
-  getUser(id: number): Promise<User | undefined>;
+
+  getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined>;
-  
-  // Datasets
-  getDatasets(userId: number): Promise<Dataset[]>;
-  getDataset(id: number): Promise<Dataset | undefined>;
+  updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
+
+  getDatasets(userId: string): Promise<Dataset[]>;
+  getDataset(id: string): Promise<Dataset | undefined>;
   createDataset(dataset: InsertDataset): Promise<Dataset>;
-  updateDataset(id: number, data: Partial<InsertDataset>): Promise<Dataset | undefined>;
-  deleteDataset(id: number): Promise<void>;
-  
-  // Risk Assessments
-  getRiskAssessments(userId: number): Promise<RiskAssessment[]>;
-  getRiskAssessment(id: number): Promise<RiskAssessment | undefined>;
+  updateDataset(id: string, data: Partial<InsertDataset>): Promise<Dataset | undefined>;
+  deleteDataset(id: string): Promise<void>;
+
+  getRiskAssessments(userId: string): Promise<RiskAssessment[]>;
+  getRiskAssessment(id: string): Promise<RiskAssessment | undefined>;
   createRiskAssessment(assessment: InsertRiskAssessment): Promise<RiskAssessment>;
-  
-  // Privacy Operations
-  getPrivacyOperations(userId: number): Promise<PrivacyOperation[]>;
-  getPrivacyOperation(id: number): Promise<PrivacyOperation | undefined>;
+
+  getPrivacyOperations(userId: string): Promise<PrivacyOperation[]>;
+  getPrivacyOperation(id: string): Promise<PrivacyOperation | undefined>;
   createPrivacyOperation(operation: InsertPrivacyOperation): Promise<PrivacyOperation>;
-  
-  // Utility Measurements
-  getUtilityMeasurements(userId: number): Promise<UtilityMeasurement[]>;
-  getUtilityMeasurement(id: number): Promise<UtilityMeasurement | undefined>;
+
+  getUtilityMeasurements(userId: string): Promise<UtilityMeasurement[]>;
+  getUtilityMeasurement(id: string): Promise<UtilityMeasurement | undefined>;
   createUtilityMeasurement(measurement: InsertUtilityMeasurement): Promise<UtilityMeasurement>;
-  
-  // Reports
-  getReports(userId: number): Promise<Report[]>;
-  getReport(id: number): Promise<Report | undefined>;
+
+  getReports(userId: string): Promise<Report[]>;
+  getReport(id: string): Promise<Report | undefined>;
   createReport(report: InsertReport): Promise<Report>;
-  deleteReport(id: number): Promise<void>;
-  
-  // Config Profiles
+  deleteReport(id: string): Promise<void>;
+
   getConfigProfiles(): Promise<ConfigProfile[]>;
-  getConfigProfile(id: number): Promise<ConfigProfile | undefined>;
+  getConfigProfile(id: string): Promise<ConfigProfile | undefined>;
   createConfigProfile(profile: InsertConfigProfile): Promise<ConfigProfile>;
-  deleteConfigProfile(id: number): Promise<void>;
-  
-  // Activity Logs
+  deleteConfigProfile(id: string): Promise<void>;
+
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
-  
-  // Stats
-  getStats(userId: number): Promise<{ datasets: number; assessments: number; reports: number; operations: number }>;
+
+  getStats(userId: string): Promise<{ datasets: number; assessments: number; reports: number; operations: number }>;
 }
 
-export class DatabaseStorage implements IStorage {
+function doc<T>(d: any): T {
+  return d.toJSON() as T;
+}
+
+export class MongoStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({ 
-      pool, 
-      createTableIfMissing: true,
-      tableName: 'session' 
+    this.sessionStore = MongoStore.create({
+      mongoUrl: process.env.MONGODB_URI!,
+      collectionName: "sessions",
+      ttl: 24 * 60 * 60,
     });
   }
 
-  // Users
-  async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
+  // ── Users ──────────────────────────────────────────────────────────────────
+  async getUser(id: string): Promise<User | undefined> {
+    const user = await UserModel.findById(id);
+    return user ? doc<User>(user) : undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user || undefined;
+    const user = await UserModel.findOne({ username });
+    return user ? doc<User>(user) : undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
+    const user = await UserModel.create(insertUser);
+    return doc<User>(user);
   }
 
-  async updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined> {
-    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
-    return user || undefined;
+  async updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined> {
+    const user = await UserModel.findByIdAndUpdate(id, data, { new: true });
+    return user ? doc<User>(user) : undefined;
   }
 
-  // Datasets
-  async getDatasets(userId: number): Promise<Dataset[]> {
-    return db.select().from(datasets).where(eq(datasets.userId, userId)).orderBy(desc(datasets.uploadedAt));
+  // ── Datasets ───────────────────────────────────────────────────────────────
+  async getDatasets(userId: string): Promise<Dataset[]> {
+    const list = await DatasetModel.find({ userId }).sort({ uploadedAt: -1 });
+    return list.map((d) => doc<Dataset>(d));
   }
 
-  async getDataset(id: number): Promise<Dataset | undefined> {
-    const [dataset] = await db.select().from(datasets).where(eq(datasets.id, id));
-    return dataset || undefined;
+  async getDataset(id: string): Promise<Dataset | undefined> {
+    try {
+      const d = await DatasetModel.findById(id);
+      return d ? doc<Dataset>(d) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async createDataset(dataset: InsertDataset): Promise<Dataset> {
-    const [result] = await db.insert(datasets).values(dataset).returning();
-    return result;
+    const d = await DatasetModel.create(dataset);
+    return doc<Dataset>(d);
   }
 
-  async updateDataset(id: number, data: Partial<InsertDataset>): Promise<Dataset | undefined> {
-    const [result] = await db.update(datasets).set(data).where(eq(datasets.id, id)).returning();
-    return result || undefined;
+  async updateDataset(id: string, data: Partial<InsertDataset>): Promise<Dataset | undefined> {
+    const d = await DatasetModel.findByIdAndUpdate(id, data, { new: true });
+    return d ? doc<Dataset>(d) : undefined;
   }
 
-  async deleteDataset(id: number): Promise<void> {
-    // Delete related records in cascade order (respecting foreign keys)
-    // First delete reports that reference this dataset
-    await db.delete(reports).where(eq(reports.datasetId, id));
-    
-    // Get privacy operations for this dataset to delete their utility measurements
-    const privacyOps = await db
-      .select({ id: privacyOperations.id })
-      .from(privacyOperations)
-      .where(eq(privacyOperations.datasetId, id));
-    
-    // Delete utility measurements that reference these privacy operations
-    if (privacyOps.length > 0) {
-      const privacyOpIds = privacyOps.map((op) => op.id);
-      await db
-        .delete(utilityMeasurements)
-        .where(inArray(utilityMeasurements.processedOperationId, privacyOpIds));
+  async deleteDataset(id: string): Promise<void> {
+    const ops = await PrivacyOperationModel.find({ datasetId: id }).select("_id");
+    const opIds = ops.map((o) => o._id);
+    if (opIds.length > 0) {
+      await UtilityMeasurementModel.deleteMany({ processedOperationId: { $in: opIds } });
     }
-    
-    // Delete privacy operations for this dataset
-    await db.delete(privacyOperations).where(eq(privacyOperations.datasetId, id));
-    
-    // Delete risk assessments for this dataset
-    await db.delete(riskAssessments).where(eq(riskAssessments.datasetId, id));
-    
-    // Finally delete the dataset
-    await db.delete(datasets).where(eq(datasets.id, id));
+    await ReportModel.deleteMany({ datasetId: id });
+    await RiskAssessmentModel.deleteMany({ datasetId: id });
+    await PrivacyOperationModel.deleteMany({ datasetId: id });
+    await DatasetModel.findByIdAndDelete(id);
   }
 
-  // Risk Assessments
-  async getRiskAssessments(userId: number): Promise<RiskAssessment[]> {
-    return db.select().from(riskAssessments).where(eq(riskAssessments.userId, userId)).orderBy(desc(riskAssessments.createdAt));
+  // ── Risk Assessments ───────────────────────────────────────────────────────
+  async getRiskAssessments(userId: string): Promise<RiskAssessment[]> {
+    const list = await RiskAssessmentModel.find({ userId }).sort({ createdAt: -1 });
+    return list.map((d) => doc<RiskAssessment>(d));
   }
 
-  async getRiskAssessment(id: number): Promise<RiskAssessment | undefined> {
-    const [assessment] = await db.select().from(riskAssessments).where(eq(riskAssessments.id, id));
-    return assessment || undefined;
+  async getRiskAssessment(id: string): Promise<RiskAssessment | undefined> {
+    try {
+      const d = await RiskAssessmentModel.findById(id);
+      return d ? doc<RiskAssessment>(d) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async createRiskAssessment(assessment: InsertRiskAssessment): Promise<RiskAssessment> {
-    const [result] = await db.insert(riskAssessments).values(assessment).returning();
-    return result;
+    const d = await RiskAssessmentModel.create(assessment);
+    return doc<RiskAssessment>(d);
   }
 
-  // Privacy Operations
-  async getPrivacyOperations(userId: number): Promise<PrivacyOperation[]> {
-    return db.select().from(privacyOperations).where(eq(privacyOperations.userId, userId)).orderBy(desc(privacyOperations.createdAt));
+  // ── Privacy Operations ─────────────────────────────────────────────────────
+  async getPrivacyOperations(userId: string): Promise<PrivacyOperation[]> {
+    const list = await PrivacyOperationModel.find({ userId }).sort({ createdAt: -1 });
+    return list.map((d) => doc<PrivacyOperation>(d));
   }
 
-  async getPrivacyOperation(id: number): Promise<PrivacyOperation | undefined> {
-    const [operation] = await db.select().from(privacyOperations).where(eq(privacyOperations.id, id));
-    return operation || undefined;
+  async getPrivacyOperation(id: string): Promise<PrivacyOperation | undefined> {
+    try {
+      const d = await PrivacyOperationModel.findById(id);
+      return d ? doc<PrivacyOperation>(d) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async createPrivacyOperation(operation: InsertPrivacyOperation): Promise<PrivacyOperation> {
-    const [result] = await db.insert(privacyOperations).values(operation).returning();
-    return result;
+    const d = await PrivacyOperationModel.create(operation);
+    return doc<PrivacyOperation>(d);
   }
 
-  // Utility Measurements
-  async getUtilityMeasurements(userId: number): Promise<UtilityMeasurement[]> {
-    return db.select().from(utilityMeasurements).where(eq(utilityMeasurements.userId, userId)).orderBy(desc(utilityMeasurements.createdAt));
+  // ── Utility Measurements ───────────────────────────────────────────────────
+  async getUtilityMeasurements(userId: string): Promise<UtilityMeasurement[]> {
+    const list = await UtilityMeasurementModel.find({ userId }).sort({ createdAt: -1 });
+    return list.map((d) => doc<UtilityMeasurement>(d));
   }
 
-  async getUtilityMeasurement(id: number): Promise<UtilityMeasurement | undefined> {
-    const [measurement] = await db.select().from(utilityMeasurements).where(eq(utilityMeasurements.id, id));
-    return measurement || undefined;
+  async getUtilityMeasurement(id: string): Promise<UtilityMeasurement | undefined> {
+    try {
+      const d = await UtilityMeasurementModel.findById(id);
+      return d ? doc<UtilityMeasurement>(d) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async createUtilityMeasurement(measurement: InsertUtilityMeasurement): Promise<UtilityMeasurement> {
-    const [result] = await db.insert(utilityMeasurements).values(measurement).returning();
-    return result;
+    const d = await UtilityMeasurementModel.create(measurement);
+    return doc<UtilityMeasurement>(d);
   }
 
-  // Reports
-  async getReports(userId: number): Promise<Report[]> {
-    return db.select().from(reports).where(eq(reports.userId, userId)).orderBy(desc(reports.createdAt));
+  // ── Reports ────────────────────────────────────────────────────────────────
+  async getReports(userId: string): Promise<Report[]> {
+    const list = await ReportModel.find({ userId }).sort({ createdAt: -1 });
+    return list.map((d) => doc<Report>(d));
   }
 
-  async getReport(id: number): Promise<Report | undefined> {
-    const [report] = await db.select().from(reports).where(eq(reports.id, id));
-    return report || undefined;
+  async getReport(id: string): Promise<Report | undefined> {
+    try {
+      const d = await ReportModel.findById(id);
+      return d ? doc<Report>(d) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async createReport(report: InsertReport): Promise<Report> {
-    const [result] = await db.insert(reports).values(report).returning();
-    return result;
+    const d = await ReportModel.create(report);
+    return doc<Report>(d);
   }
 
-  async deleteReport(id: number): Promise<void> {
-    await db.delete(reports).where(eq(reports.id, id));
+  async deleteReport(id: string): Promise<void> {
+    await ReportModel.findByIdAndDelete(id);
   }
 
-  // Config Profiles
+  // ── Config Profiles ────────────────────────────────────────────────────────
   async getConfigProfiles(): Promise<ConfigProfile[]> {
-    return db.select().from(configProfiles).orderBy(desc(configProfiles.createdAt));
+    const list = await ConfigProfileModel.find().sort({ createdAt: -1 });
+    return list.map((d) => doc<ConfigProfile>(d));
   }
 
-  async getConfigProfile(id: number): Promise<ConfigProfile | undefined> {
-    const [profile] = await db.select().from(configProfiles).where(eq(configProfiles.id, id));
-    return profile || undefined;
+  async getConfigProfile(id: string): Promise<ConfigProfile | undefined> {
+    try {
+      const d = await ConfigProfileModel.findById(id);
+      return d ? doc<ConfigProfile>(d) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async createConfigProfile(profile: InsertConfigProfile): Promise<ConfigProfile> {
-    const [result] = await db.insert(configProfiles).values(profile).returning();
-    return result;
+    const d = await ConfigProfileModel.create(profile);
+    return doc<ConfigProfile>(d);
   }
 
-  async deleteConfigProfile(id: number): Promise<void> {
-    await db.delete(configProfiles).where(eq(configProfiles.id, id));
+  async deleteConfigProfile(id: string): Promise<void> {
+    await ConfigProfileModel.findByIdAndDelete(id);
   }
 
-  // Activity Logs
+  // ── Activity Logs ──────────────────────────────────────────────────────────
   async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
-    const [result] = await db.insert(activityLogs).values(log).returning();
-    return result;
+    const d = await ActivityLogModel.create(log);
+    return doc<ActivityLog>(d);
   }
 
-  // Stats
-  async getStats(userId: number): Promise<{ datasets: number; assessments: number; reports: number; operations: number }> {
-    const [datasetsResult] = await db.select().from(datasets).where(eq(datasets.userId, userId));
-    const datasetsList = await db.select().from(datasets).where(eq(datasets.userId, userId));
-    const assessmentsList = await db.select().from(riskAssessments).where(eq(riskAssessments.userId, userId));
-    const reportsList = await db.select().from(reports).where(eq(reports.userId, userId));
-    const operationsList = await db.select().from(privacyOperations).where(eq(privacyOperations.userId, userId));
-    
-    return {
-      datasets: datasetsList.length,
-      assessments: assessmentsList.length,
-      reports: reportsList.length,
-      operations: operationsList.length,
-    };
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  async getStats(userId: string): Promise<{ datasets: number; assessments: number; reports: number; operations: number }> {
+    const [datasets, assessments, reports, operations] = await Promise.all([
+      DatasetModel.countDocuments({ userId }),
+      RiskAssessmentModel.countDocuments({ userId }),
+      ReportModel.countDocuments({ userId }),
+      PrivacyOperationModel.countDocuments({ userId }),
+    ]);
+    return { datasets, assessments, reports, operations };
   }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new MongoStorage();

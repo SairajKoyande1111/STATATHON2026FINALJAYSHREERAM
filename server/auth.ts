@@ -37,7 +37,7 @@ export function setupAuth(app: Express) {
     cookie: {
       secure: false,
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 24 * 60 * 60 * 1000,
     },
   };
 
@@ -61,7 +61,7 @@ export function setupAuth(app: Express) {
   );
 
   passport.serializeUser((user, done) => done(null, user.id));
-  passport.deserializeUser(async (id: number, done) => {
+  passport.deserializeUser(async (id: string, done) => {
     try {
       const user = await storage.getUser(id);
       done(null, user);
@@ -76,12 +76,10 @@ export function setupAuth(app: Express) {
       if (existingUser) {
         return res.status(400).send("Username already exists");
       }
-
       const user = await storage.createUser({
         ...req.body,
         password: await hashPassword(req.body.password),
       });
-
       req.login(user, (err) => {
         if (err) return next(err);
         res.status(201).json(user);

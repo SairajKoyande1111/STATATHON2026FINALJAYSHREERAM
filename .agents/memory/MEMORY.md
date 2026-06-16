@@ -14,3 +14,4 @@
 - [tsconfig ES2020 Target](tsconfig-es2020.md) — added target ES2020 to tsconfig.json; required for BigInt literals; incremental cache must be cleared after tsconfig changes (rm node_modules/typescript/tsbuildinfo)
 - [Utility Measurement Module Spec](utility-module-spec.md) — OUS=30%SFS+25%DS+20%IC+15%CP+10%PU; server/utility-compute.ts math engine; non-aligned rows handled by mean-based NMAE; generalised values parsed as midpoints
 - [Backend Hot-Reload Gap](backend-no-hotreload.md) — dev script is `tsx server/index.ts` (no --watch); backend NEVER auto-reloads; workflow must be explicitly restarted after any server-side change or old code keeps running
+- [MongoDB Migration](mongodb-migration.md) — fully migrated from PostgreSQL/Drizzle to MongoDB/Mongoose; all IDs are now strings (ObjectId); ecosystem.config.cjs has URI placeholder; seedDefaults() in routes.ts creates admin+profiles on first boot

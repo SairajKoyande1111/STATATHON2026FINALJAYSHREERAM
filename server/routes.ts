@@ -118,11 +118,66 @@ function standardizeStringValues(data: any[], columns: string[]): { data: any[],
   return { data, fixes: [] };
 }
 
+async function seedDefaults() {
+  const existing = await storage.getUserByUsername("admin");
+  if (!existing) {
+    await storage.createUser({
+      username: "admin",
+      password: await hashPassword("admin@123"),
+      email: "admin@gov.in",
+      fullName: "System Administrator",
+      role: "admin",
+      department: "Ministry of Electronics and Information Technology",
+      permissions: ["data_upload", "risk_assessment", "privacy_enhancement", "utility_measurement", "report_generation"],
+      twoFactorEnabled: false,
+      sessionTimeout: 30,
+      notificationsEnabled: true,
+    });
+    console.log("Default admin user created (username: admin, password: admin@123)");
+  }
+
+  const profiles = await storage.getConfigProfiles();
+  if (profiles.length === 0) {
+    const defaultProfiles = [
+      {
+        name: "High Privacy",
+        description: "Maximum privacy protection for sensitive datasets",
+        kValue: 10, lValue: 5, tValue: 0.2, epsilon: 0.5,
+        suppressionLimit: 0.05, useCase: "sensitive",
+        recommendedFor: ["health", "finance", "government"],
+        governmentClearance: "Top Secret", isDefault: false,
+      },
+      {
+        name: "Balanced",
+        description: "Balance between privacy and data utility",
+        kValue: 5, lValue: 3, tValue: 0.3, epsilon: 1.0,
+        suppressionLimit: 0.1, useCase: "general",
+        recommendedFor: ["research", "analytics"],
+        governmentClearance: "Secret", isDefault: true,
+      },
+      {
+        name: "High Utility",
+        description: "Preserve maximum data utility with moderate privacy",
+        kValue: 3, lValue: 2, tValue: 0.5, epsilon: 2.0,
+        suppressionLimit: 0.15, useCase: "analytics",
+        recommendedFor: ["public", "research"],
+        governmentClearance: "Unclassified", isDefault: false,
+      },
+    ];
+    for (const p of defaultProfiles) {
+      await storage.createConfigProfile(p);
+    }
+    console.log("Default config profiles created");
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   setupAuth(app);
+
+  await seedDefaults();
 
   // Stats endpoint
   app.get("/api/stats", requireAuth, async (req, res) => {
@@ -309,7 +364,7 @@ export async function registerRoutes(
 
   app.get("/api/data/:id", requireAuth, async (req, res) => {
     try {
-      const dataset = await storage.getDataset(parseInt(req.params.id));
+      const dataset = await storage.getDataset(req.params.id);
       if (!dataset) {
         return res.status(404).send("Dataset not found");
       }
@@ -321,7 +376,7 @@ export async function registerRoutes(
 
   app.get("/api/data/:id/preview", requireAuth, async (req, res) => {
     try {
-      const dataset = await storage.getDataset(parseInt(req.params.id));
+      const dataset = await storage.getDataset(req.params.id);
       if (!dataset) {
         return res.status(404).send("Dataset not found");
       }
@@ -337,7 +392,7 @@ export async function registerRoutes(
 
   app.post("/api/data/:id/autofix", requireAuth, async (req, res) => {
     try {
-      const dataset = await storage.getDataset(parseInt(req.params.id));
+      const dataset = await storage.getDataset(req.params.id);
       if (!dataset) {
         return res.status(404).send("Dataset not found");
       }
@@ -447,7 +502,7 @@ export async function registerRoutes(
 
   app.delete("/api/datasets/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteDataset(parseInt(req.params.id));
+      await storage.deleteDataset(req.params.id);
       res.sendStatus(200);
     } catch (error) {
       res.status(500).send("Failed to delete dataset");
@@ -863,7 +918,7 @@ export async function registerRoutes(
 
   app.get("/api/privacy/:id/download", requireAuth, async (req, res) => {
     try {
-      const operation = await storage.getPrivacyOperation(parseInt(req.params.id));
+      const operation = await storage.getPrivacyOperation(req.params.id);
       if (!operation) {
         return res.status(404).send("Operation not found");
       }
@@ -966,7 +1021,7 @@ export async function registerRoutes(
   // Get last risk assessment for a specific dataset
   app.get("/api/risk/dataset/:datasetId", requireAuth, async (req, res) => {
     try {
-      const datasetId = parseInt(req.params.datasetId);
+      const datasetId = req.params.datasetId;
       const allAssessments = await storage.getRiskAssessments(req.user!.id);
       const filtered = allAssessments
         .filter((r) => r.datasetId === datasetId)
@@ -1062,7 +1117,7 @@ export async function registerRoutes(
 
   app.get("/api/reports/:id/download", requireAuth, async (req, res) => {
     try {
-      const report = await storage.getReport(parseInt(req.params.id));
+      const report = await storage.getReport(req.params.id);
       if (!report) {
         return res.status(404).send("Report not found");
       }
@@ -1175,7 +1230,7 @@ export async function registerRoutes(
 
   app.delete("/api/reports/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteReport(parseInt(req.params.id));
+      await storage.deleteReport(req.params.id);
       res.sendStatus(200);
     } catch (error) {
       res.status(500).send("Failed to delete report");
@@ -1203,7 +1258,7 @@ export async function registerRoutes(
 
   app.delete("/api/config/profiles/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteConfigProfile(parseInt(req.params.id));
+      await storage.deleteConfigProfile(req.params.id);
       res.sendStatus(200);
     } catch (error) {
       res.status(500).send("Failed to delete profile");
