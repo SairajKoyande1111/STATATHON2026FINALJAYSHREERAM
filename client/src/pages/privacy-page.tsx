@@ -146,6 +146,91 @@ interface AutoSuggest {
   reason?: string;
 }
 
+// ─── Searchable column list ────────────────────────────────────────────────────
+function PrivacySearchableList({
+  label,
+  subtext,
+  legend,
+  columns,
+  selected,
+  toggle,
+  getBadge,
+  badgeClassName,
+  idPrefix,
+  onClear,
+  clearLabel = "Uncheck All",
+  testIdPrefix,
+}: {
+  label: React.ReactNode;
+  subtext?: string;
+  legend?: string;
+  columns: string[];
+  selected: string[];
+  toggle: (col: string) => void;
+  getBadge?: (col: string) => string | null | undefined;
+  badgeClassName?: string;
+  idPrefix: string;
+  onClear?: () => void;
+  clearLabel?: string;
+  testIdPrefix?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const filtered = columns.filter((col) =>
+    col.toLowerCase().includes(search.toLowerCase())
+  );
+  return (
+    <div className="space-y-2 mb-4">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs font-semibold uppercase tracking-wide">{label}</Label>
+        {onClear && (
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+            onClick={onClear}
+            data-testid={testIdPrefix ? `button-uncheck-all-${testIdPrefix}` : undefined}
+          >
+            {clearLabel}
+          </button>
+        )}
+      </div>
+      {subtext && <p className="text-xs text-muted-foreground">{subtext}</p>}
+      <div className="relative">
+        <Input
+          placeholder="Search columns…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-7 text-xs pl-7 pr-2"
+        />
+        <svg className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+        </svg>
+      </div>
+      <ScrollArea className="h-[130px] rounded-md border p-2">
+        <div className="space-y-1">
+          {filtered.length === 0 && (
+            <p className="text-xs text-muted-foreground italic">No columns match</p>
+          )}
+          {filtered.map((col) => {
+            const badge = getBadge?.(col);
+            return (
+              <div key={col} className="flex items-center gap-2 py-0.5">
+                <Checkbox
+                  id={`${idPrefix}-${col}`}
+                  checked={selected.includes(col)}
+                  onCheckedChange={() => toggle(col)}
+                  data-testid={testIdPrefix ? `checkbox-${testIdPrefix}-${col}` : undefined}
+                />
+                <label htmlFor={`${idPrefix}-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
+                {badge && <span className={badgeClassName ?? "text-xs shrink-0"} title={col}>{badge}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </ScrollArea>
+      {legend && <p className="text-[10px] text-muted-foreground">{legend}</p>}
+    </div>
+  );
+}
+
 // ─── Result summary component ─────────────────────────────────────────────────
 function ResultCard({ result }: { result: PrivacyResult }) {
   const lossColor = result.informationLoss < 0.15 ? "text-emerald-600" : result.informationLoss < 0.35 ? "text-amber-500" : "text-rose-500";
@@ -1242,30 +1327,21 @@ export default function PrivacyPage() {
               )}
 
               {showQI && (
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold uppercase tracking-wide">Quasi-Identifiers (QI)</Label>
-                    <button className="text-xs text-muted-foreground hover:text-foreground underline" onClick={() => setQuasiIdentifiers([])} data-testid="button-uncheck-all-qi">Uncheck All</button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Auto-selected from column profiles.</p>
-                  <ScrollArea className="h-[140px] rounded-md border p-2">
-                    <div className="space-y-1">
-                      {allCols.map((col) => {
-                        const profile = colProfiles[col];
-                        const cls = profile?.classification ?? "QUASI_ID";
-                        const badge = cls === "DIRECT_ID" ? "🔴" : cls === "SENSITIVE" ? "🔵" : cls === "IGNORE" ? "⚪" : "🟡";
-                        return (
-                          <div key={col} className="flex items-center gap-2 py-0.5">
-                            <Checkbox id={`qi-${col}`} checked={quasiIdentifiers.includes(col)} onCheckedChange={() => toggleQI(col)} data-testid={`checkbox-qi-${col}`} />
-                            <label htmlFor={`qi-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
-                            <span className="text-xs shrink-0" title={cls}>{badge}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </ScrollArea>
-                  <p className="text-[10px] text-muted-foreground">🔴 Direct-ID  🟡 QI  🔵 Sensitive  ⚪ Ignore</p>
-                </div>
+                <PrivacySearchableList
+                  label="Quasi-Identifiers (QI)"
+                  subtext="Auto-selected from column profiles."
+                  legend="🔴 Direct-ID  🟡 QI  🔵 Sensitive  ⚪ Ignore"
+                  columns={allCols}
+                  selected={quasiIdentifiers}
+                  toggle={toggleQI}
+                  getBadge={(col) => {
+                    const cls = colProfiles[col]?.classification ?? "QUASI_ID";
+                    return cls === "DIRECT_ID" ? "🔴" : cls === "SENSITIVE" ? "🔵" : cls === "IGNORE" ? "⚪" : "🟡";
+                  }}
+                  idPrefix="qi"
+                  onClear={() => setQuasiIdentifiers([])}
+                  testIdPrefix="qi"
+                />
               )}
 
               {showSA && (
@@ -1297,31 +1373,28 @@ export default function PrivacyPage() {
               )}
 
               {showTC_SDC && filteredTargetCols.length > 0 && (
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold uppercase tracking-wide">
+                <PrivacySearchableList
+                  label={
+                    <>
                       Target Columns
                       {tcfg.tcFilter === "numeric" && <span className="ml-1 font-normal text-muted-foreground">(numeric)</span>}
                       {tcfg.tcFilter === "categorical" && <span className="ml-1 font-normal text-muted-foreground">(categorical)</span>}
-                    </Label>
-                    <button className="text-xs text-muted-foreground hover:text-foreground underline" onClick={() => setTargetCols([])} data-testid="button-uncheck-all-tc">All</button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">All = none checked (applies to all eligible).</p>
-                  <ScrollArea className="h-[140px] rounded-md border p-2">
-                    <div className="space-y-1">
-                      {filteredTargetCols.map((col) => {
-                        const profile = colProfiles[col];
-                        return (
-                          <div key={col} className="flex items-center gap-2 py-0.5">
-                            <Checkbox id={`tgt-${col}`} checked={targetCols.includes(col)} onCheckedChange={() => toggleTarget(col)} data-testid={`checkbox-target-${col}`} />
-                            <label htmlFor={`tgt-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
-                            {profile && <span className="text-[10px] text-muted-foreground shrink-0">{profile.uniqueCount}u</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </ScrollArea>
-                </div>
+                    </>
+                  }
+                  subtext="All = none checked (applies to all eligible)."
+                  columns={filteredTargetCols}
+                  selected={targetCols}
+                  toggle={toggleTarget}
+                  getBadge={(col) => {
+                    const u = colProfiles[col]?.uniqueCount;
+                    return u != null ? `${u}u` : null;
+                  }}
+                  badgeClassName="text-[10px] text-muted-foreground"
+                  idPrefix="tgt"
+                  onClear={() => setTargetCols([])}
+                  clearLabel="All"
+                  testIdPrefix="target"
+                />
               )}
 
               {family === "sdc" && sdcTech === "data-shuffling" && shuffleVariant === "within_group" && (

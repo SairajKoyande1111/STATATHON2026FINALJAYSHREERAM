@@ -17,24 +17,25 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-import dashboardIcon  from "@assets/dashboard.png";
-import folderIcon     from "@assets/folder.png";
-import cautionIcon    from "@assets/warning.png";
-import securityIcon   from "@assets/security.png";
-import graphIcon      from "@assets/graph.png";
-import statisticsIcon from "@assets/statistics.png";
-import settingIcon    from "@assets/setting.png";
-import userIcon       from "@assets/user-icon.png";
-import helpIcon       from "@assets/help.png";
+import dashboardIcon      from "@assets/dashboard.png";
+import folderIcon         from "@assets/folder.png";
+import cautionIcon        from "@assets/warning.png";
+import securityIcon       from "@assets/security.png";
+import graphIcon          from "@assets/graph.png";
+import statisticsIcon     from "@assets/statistics.png";
+import settingIcon        from "@assets/setting.png";
+import userIcon           from "@assets/user-icon.png";
+import helpIcon           from "@assets/help.png";
+import datasetHandlingIcon from "@assets/layer_1781634219831.png";
 
 const mainMenuItems = [
-  { title: "Dashboard",           url: "/",         icon: dashboardIcon,  perm: null },
-  { title: "Data Upload",         url: "/upload",   icon: folderIcon,     perm: "data_upload" },
-  { title: "Risk Assessment",     url: "/risk",     icon: cautionIcon,    perm: "risk_assessment" },
-  { title: "Privacy Enhancement", url: "/privacy",  icon: securityIcon,   perm: "privacy_enhancement" },
-  { title: "Dataset Handling",    url: "/datasets", icon: statisticsIcon, perm: "privacy_enhancement" },
-  { title: "Utility Measurement", url: "/utility",  icon: graphIcon,      perm: "utility_measurement" },
-  { title: "Reports",             url: "/reports",  icon: statisticsIcon, perm: "report_generation" },
+  { title: "Dashboard",           url: "/",         icon: dashboardIcon,       perm: null },
+  { title: "Data Upload",         url: "/upload",   icon: folderIcon,          perm: "data_upload" },
+  { title: "Risk Assessment",     url: "/risk",     icon: cautionIcon,         perm: "risk_assessment" },
+  { title: "Privacy Enhancement", url: "/privacy",  icon: securityIcon,        perm: "privacy_enhancement" },
+  { title: "Dataset Handling",    url: "/datasets", icon: datasetHandlingIcon, perm: "privacy_enhancement" },
+  { title: "Utility Measurement", url: "/utility",  icon: graphIcon,           perm: "utility_measurement" },
+  { title: "Reports",             url: "/reports",  icon: statisticsIcon,      perm: "report_generation" },
 ];
 
 const settingsMenuItems = [

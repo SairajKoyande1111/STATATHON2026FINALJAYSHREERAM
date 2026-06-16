@@ -72,6 +72,61 @@ const ATTACKS: { id: AttackId; label: string; short: string; icon: React.ReactNo
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const poppinsStyle = { fontFamily: "'Poppins', sans-serif" };
+
+function QISearchableList({
+  columns,
+  selected,
+  toggle,
+  getClassification,
+  showBadgeFor,
+  idPrefix,
+}: {
+  columns: string[];
+  selected: string[];
+  toggle: (col: string) => void;
+  getClassification: (col: string) => any;
+  showBadgeFor: string;
+  idPrefix: string;
+}) {
+  const [search, setSearch] = useState("");
+  const filtered = columns.filter((col) =>
+    col.toLowerCase().includes(search.toLowerCase())
+  );
+  return (
+    <div className="space-y-1">
+      <div className="relative">
+        <Input
+          placeholder="Search columns…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-7 text-xs pl-7 pr-2 rounded-lg border-slate-200"
+          style={poppinsStyle}
+        />
+        <svg className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+        </svg>
+      </div>
+      <div className="border border-slate-100 rounded-xl p-2 max-h-[130px] overflow-y-auto space-y-1">
+        {filtered.length === 0 && (
+          <p className="text-xs text-slate-400 italic px-1" style={poppinsStyle}>No columns match</p>
+        )}
+        {filtered.map((col) => {
+          const cls = getClassification(col);
+          const badge = cls?.confidenceLabel === "HIGH" ? "🟢" : cls?.confidenceLabel === "MEDIUM" ? "🟡" : cls ? "🔵" : null;
+          return (
+            <div key={col} className="flex items-center gap-2" title={cls?.reason ?? col}>
+              <Checkbox id={`${idPrefix}-${col}`} checked={selected.includes(col)} onCheckedChange={() => toggle(col)} />
+              <label htmlFor={`${idPrefix}-${col}`} className="text-xs cursor-pointer flex-1 truncate text-slate-700" style={poppinsStyle}>{col}</label>
+              {badge && cls?.classification === showBadgeFor && <span className="text-[10px]">{badge}</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function riskBadge(level: RiskLevel | string) {
   const colors: Record<string, string> = {
     CRITICAL: "bg-red-100 text-red-700 border-red-300",
@@ -5605,19 +5660,14 @@ export default function RiskPage() {
                     )}
                   </div>
                 </div>
-                <div className="border border-slate-100 rounded-xl p-2 max-h-[140px] overflow-y-auto space-y-1">
-                  {selectedDatasetObj.columns?.map((col) => {
-                    const cls = autoAssist?.classifications[col];
-                    const badge = cls?.confidenceLabel === "HIGH" ? "🟢" : cls?.confidenceLabel === "MEDIUM" ? "🟡" : cls ? "🔵" : null;
-                    return (
-                      <div key={col} className="flex items-center gap-2" title={cls?.reason ?? col}>
-                        <Checkbox id={`qi-${col}`} checked={quasiIdentifiers.includes(col)} onCheckedChange={() => toggleColumn(col, "quasi")} />
-                        <label htmlFor={`qi-${col}`} className="text-xs cursor-pointer flex-1 truncate text-slate-700" style={poppins}>{col}</label>
-                        {badge && cls?.classification === "QUASI_ID" && <span className="text-[10px]">{badge}</span>}
-                      </div>
-                    );
-                  })}
-                </div>
+                <QISearchableList
+                  columns={selectedDatasetObj.columns ?? []}
+                  selected={quasiIdentifiers}
+                  toggle={(col) => toggleColumn(col, "quasi")}
+                  getClassification={(col) => autoAssist?.classifications[col]}
+                  showBadgeFor="QUASI_ID"
+                  idPrefix="qi"
+                />
               </div>
 
               {/* Sensitive Attributes */}
@@ -5631,19 +5681,14 @@ export default function RiskPage() {
                     )}
                   </div>
                 </div>
-                <div className="border border-slate-100 rounded-xl p-2 max-h-[120px] overflow-y-auto space-y-1">
-                  {selectedDatasetObj.columns?.map((col) => {
-                    const cls = autoAssist?.classifications[col];
-                    const badge = cls?.confidenceLabel === "HIGH" ? "🟢" : cls?.confidenceLabel === "MEDIUM" ? "🟡" : cls ? "🔵" : null;
-                    return (
-                      <div key={col} className="flex items-center gap-2" title={cls?.reason ?? col}>
-                        <Checkbox id={`sa-${col}`} checked={sensitiveAttributes.includes(col)} onCheckedChange={() => toggleColumn(col, "sensitive")} />
-                        <label htmlFor={`sa-${col}`} className="text-xs cursor-pointer flex-1 truncate text-slate-700" style={poppins}>{col}</label>
-                        {badge && cls?.classification === "SENSITIVE" && <span className="text-[10px]">{badge}</span>}
-                      </div>
-                    );
-                  })}
-                </div>
+                <QISearchableList
+                  columns={selectedDatasetObj.columns ?? []}
+                  selected={sensitiveAttributes}
+                  toggle={(col) => toggleColumn(col, "sensitive")}
+                  getClassification={(col) => autoAssist?.classifications[col]}
+                  showBadgeFor="SENSITIVE"
+                  idPrefix="sa"
+                />
               </div>
 
               {autoAssist && (
@@ -5685,7 +5730,7 @@ export default function RiskPage() {
               {ATTACKS.map((a) => (
                 <div key={a.id} className="flex items-center gap-2">
                   <Checkbox id={`atk-${a.id}`} checked={selectedAttacks.includes(a.id)} onCheckedChange={() => toggleAttack(a.id)} />
-                  <label htmlFor={`atk-${a.id}`} className="text-xs text-slate-700 cursor-pointer" style={poppins}>{a.short}</label>
+                  <label htmlFor={`atk-${a.id}`} className="text-sm font-medium text-slate-700 cursor-pointer leading-tight" style={poppins}>{a.label}</label>
                 </div>
               ))}
             </div>
