@@ -6,9 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Upload, FileSpreadsheet, CheckCircle, Trash2, Loader2,
-  Database, Users, Shield, TrendingUp, Wrench, CheckCircle2,
-  Eye, ArrowLeft, Table2,
+  Upload, FileSpreadsheet, CheckCircle, Loader2,
+  CheckCircle2, ArrowLeft, Table2,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -16,24 +15,32 @@ import type { Dataset } from "@shared/schema";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import iconDatabase from "@assets/database_1781619133257.png";
+import iconDiagnosis from "@assets/diagnosis_1781619253434.png";
+import iconTargetAudience from "@assets/target-audience_1781619256636.png";
+import iconShield from "@assets/shield_1781619281871.png";
+import iconFolder from "@assets/open-folder_(1)_1781619380487.png";
+import iconView from "@assets/view_1781619449946.png";
+import iconTools from "@assets/tools_1781619494445.png";
+import iconBin from "@assets/bin_1781619508970.png";
 
 const poppins: React.CSSProperties = { fontFamily: "'Poppins', sans-serif" };
 
 const GUIDELINES = [
   {
-    icon: Database, title: "File Requirements", color: "text-blue-600",
+    img: iconDatabase, title: "File Requirements",
     items: ["CSV, XLSX, XLS, JSON accepted", "Max file size: 100 MB", "Min 10 rows recommended", "Headers required"],
   },
   {
-    icon: Shield, title: "Quasi-Identifiers", color: "text-violet-600",
+    img: iconDiagnosis, title: "Quasi-Identifiers",
     items: ["Age, Gender, Postal Code", "State, Occupation", "Education Level, Salary", "Can re-identify when combined"],
   },
   {
-    icon: Users, title: "Direct Identifiers", color: "text-rose-600",
+    img: iconTargetAudience, title: "Direct Identifiers",
     items: ["Remove: Name, ID, Email", "Remove: Phone, Address", "Keep: Anonymised ID only", "Already removed by NSO"],
   },
   {
-    icon: TrendingUp, title: "Data Quality", color: "text-emerald-600",
+    img: iconShield, title: "Data Quality",
     items: ["Minimise missing values", "Check for outliers", "Consistent formatting", "Valid data types"],
   },
 ];
@@ -268,7 +275,7 @@ export default function UploadPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-8 items-start">
 
           {/* LEFT — upload zone */}
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
             <div>
               <h2 className="text-xl font-semibold text-slate-800 mb-1.5" style={poppins}>Upload Microdata File</h2>
               <p className="text-[15px] text-slate-500 font-medium leading-relaxed" style={poppins}>
@@ -293,7 +300,7 @@ export default function UploadPage() {
               {uploadMutation.isPending ? (
                 <Loader2 className="h-12 w-12 text-blue-500 animate-spin" />
               ) : (
-                <div className={`h-18 w-18 h-[72px] w-[72px] rounded-2xl flex items-center justify-center ${isDragActive ? "bg-blue-100" : "bg-slate-100"}`}>
+                <div className={`h-[72px] w-[72px] rounded-2xl flex items-center justify-center ${isDragActive ? "bg-blue-100" : "bg-slate-100"}`}>
                   <Upload className={`h-8 w-8 ${isDragActive ? "text-blue-600" : "text-slate-500"}`} />
                 </div>
               )}
@@ -326,20 +333,20 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* RIGHT — guidelines 2×2, no bg cards */}
-          <div>
-            <h2 className="text-xl font-semibold text-slate-800 mb-4" style={poppins}>Upload Guidelines</h2>
+          {/* RIGHT — guidelines 2×2 aligned with the dropzone */}
+          <div className="flex flex-col gap-4">
+            <h2 className="text-xl font-semibold text-slate-800" style={poppins}>Upload Guidelines</h2>
             <div className="grid grid-cols-2 gap-x-6 gap-y-7">
-              {GUIDELINES.map(({ icon: Icon, title, color, items }) => (
+              {GUIDELINES.map(({ img, title, items }) => (
                 <div key={title}>
                   <div className="flex items-center gap-2 mb-2.5">
-                    <Icon className={`h-4 w-4 ${color} shrink-0`} />
-                    <span className="text-[14px] font-semibold text-slate-700" style={poppins}>{title}</span>
+                    <img src={img} alt={title} className="h-4 w-4 shrink-0 object-contain" />
+                    <span className="text-[14px] font-semibold text-slate-800" style={poppins}>{title}</span>
                   </div>
                   <ul className="space-y-1">
                     {items.map(item => (
-                      <li key={item} className="text-[13px] text-slate-500 font-medium flex items-start gap-1.5 leading-snug" style={poppins}>
-                        <span className="shrink-0 text-slate-300 mt-0.5">·</span>{item}
+                      <li key={item} className="text-[13px] text-slate-900 font-medium flex items-start gap-1.5 leading-snug" style={poppins}>
+                        <span className="shrink-0 text-slate-900 mt-0.5">·</span>{item}
                       </li>
                     ))}
                   </ul>
@@ -380,7 +387,7 @@ export default function UploadPage() {
                 <table className="w-full text-sm" style={poppins}>
                   <thead>
                     <tr className="border-b border-slate-100">
-                      {["File Name", "Format", "Size", "Rows", "Cols", "Quality", "Uploaded", ""].map(h => (
+                      {["File Name", "Format", "Size", "Rows", "Cols", "Quality", "Uploaded", "Actions"].map(h => (
                         <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap" style={poppins}>
                           {h}
                         </th>
@@ -396,48 +403,48 @@ export default function UploadPage() {
                             className="flex items-center gap-2.5 text-left group"
                           >
                             <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                              <FileSpreadsheet className="h-4 w-4 text-blue-600" />
+                              <img src={iconFolder} alt="file" className="h-4 w-4 object-contain" />
                             </div>
-                            <span className="text-[14px] font-semibold text-slate-800 group-hover:text-blue-600 transition-colors truncate max-w-[180px]" style={poppins}>
+                            <span className="text-[14px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors truncate max-w-[180px]" style={poppins}>
                               {ds.originalName}
                             </span>
                           </button>
                         </td>
                         <td className="px-5 py-4">
-                          <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-600 text-xs font-semibold tracking-wide" style={poppins}>
+                          <span className="text-xs font-semibold text-slate-900 tracking-wide" style={poppins}>
                             {ds.format.toUpperCase()}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-500 font-medium whitespace-nowrap" style={poppins}>{formatBytes(ds.size)}</td>
-                        <td className="px-5 py-4 text-sm font-semibold text-slate-700" style={poppins}>{ds.rowCount.toLocaleString()}</td>
-                        <td className="px-5 py-4 text-sm font-semibold text-slate-700" style={poppins}>{ds.columns?.length || 0}</td>
+                        <td className="px-5 py-4 text-sm text-slate-900 font-medium whitespace-nowrap" style={poppins}>{formatBytes(ds.size)}</td>
+                        <td className="px-5 py-4 text-sm font-semibold text-slate-900" style={poppins}>{ds.rowCount.toLocaleString()}</td>
+                        <td className="px-5 py-4 text-sm font-semibold text-slate-900" style={poppins}>{ds.columns?.length || 0}</td>
                         <td className="px-5 py-4"><QualityBar score={ds.qualityScore} /></td>
-                        <td className="px-5 py-4 text-sm text-slate-400 font-medium whitespace-nowrap" style={poppins}>{formatDate(ds.uploadedAt)}</td>
+                        <td className="px-5 py-4 text-sm text-slate-900 font-medium whitespace-nowrap" style={poppins}>{formatDate(ds.uploadedAt)}</td>
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => openFullView(ds)}
                               title="View full data"
-                              className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-blue-50 transition-colors"
                             >
-                              <Eye className="h-4 w-4" />
+                              <img src={iconView} alt="view" className="h-4 w-4 object-contain" />
                             </button>
                             <button
                               onClick={() => handleAutoFix(ds)}
                               disabled={!!(isFixing[ds.id] || fixResults[ds.id])}
                               title="Auto-fix issues"
-                              className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-40"
+                              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-amber-50 transition-colors disabled:opacity-40"
                             >
-                              {isFixing[ds.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                              {isFixing[ds.id] ? <Loader2 className="h-4 w-4 animate-spin text-amber-500" /> : <img src={iconTools} alt="fix" className="h-4 w-4 object-contain" />}
                             </button>
                             <button
                               onClick={() => deleteMutation.mutate(ds.id)}
                               disabled={deleteMutation.isPending}
                               title="Delete dataset"
                               data-testid={`button-delete-${ds.id}`}
-                              className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-40"
+                              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-rose-50 transition-colors disabled:opacity-40"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <img src={iconBin} alt="delete" className="h-4 w-4 object-contain" />
                             </button>
                           </div>
                         </td>
