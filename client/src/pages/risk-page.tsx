@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertTriangle, Shield, Users, Fingerprint, BarChart3, Play, Loader2,
   CheckCircle, XCircle, Target, Eye, Brain, UserCheck, Network, Info,
-  Download, ChevronLeft, ChevronRight, Filter,
+  Download, ChevronLeft, ChevronRight, Filter, ArrowLeft, ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Dataset } from "@shared/schema";
@@ -5361,6 +5361,15 @@ function ComparisonDashboard({ results }: { results: AllResults }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
+const poppins = { fontFamily: "'Poppins', sans-serif" };
+
+const RISK_LEVEL_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  CRITICAL: { bg: "bg-red-50",    text: "text-red-700",    border: "border-red-200"    },
+  HIGH:     { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
+  MEDIUM:   { bg: "bg-amber-50",  text: "text-amber-700",  border: "border-amber-200"  },
+  LOW:      { bg: "bg-green-50",  text: "text-green-700",  border: "border-green-200"  },
+};
+
 export default function RiskPage() {
   const { toast } = useToast();
   const [selectedDataset, setSelectedDataset] = useState<string>("");
@@ -5368,28 +5377,25 @@ export default function RiskPage() {
   const [sensitiveAttributes, setSensitiveAttributes] = useState<string[]>([]);
   const [kThreshold, setKThreshold] = useState([5]);
   const [lThreshold, setLThreshold] = useState([3]);
-  const [tThreshold, setTThreshold] = useState([20]); // stored as int 1–50, divided by 100
+  const [tThreshold, setTThreshold] = useState([20]);
   const [samplePct, setSamplePct] = useState([100]);
   const [selectedAttacks, setSelectedAttacks] = useState<AttackId[]>(ATTACKS.map((a) => a.id));
   const [results, setResults] = useState<AllResults>({});
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ step: string; pct: number } | null>(null);
-  const [activeTab, setActiveTab] = useState("prosecutor");
   const [autoAssist, setAutoAssist] = useState<AutoAssistResult | null>(null);
   const [autoAssistLoading, setAutoAssistLoading] = useState(false);
+  const [viewReport, setViewReport] = useState<AttackId | "comparison" | null>(null);
   const appliedDataset = useRef<string>("");
 
-  const { data: datasets, isLoading: datasetsLoading } = useQuery<Dataset[]>({ queryKey: ["/api/datasets"] });
-
+  const { data: datasets } = useQuery<Dataset[]>({ queryKey: ["/api/datasets"] });
   const selectedDatasetObj = datasets?.find((d) => d.id.toString() === selectedDataset);
 
-  // Fetch full dataset data for client-side computation
   const { data: datasetData } = useQuery<{ data: DataRow[] }>({
     queryKey: ["/api/data", selectedDataset],
     enabled: !!selectedDataset,
   });
 
-  // Run auto-assist whenever a new dataset's data loads
   useEffect(() => {
     if (!datasetData?.data?.length || !selectedDatasetObj) { setAutoAssist(null); return; }
     setAutoAssistLoading(true);
@@ -5439,603 +5445,551 @@ export default function RiskPage() {
       toast({ title: "Dataset not loaded", description: "Wait for dataset to load, then try again.", variant: "destructive" });
       return;
     }
-
     setRunning(true);
     setResults({});
+    setViewReport(null);
     const newResults: AllResults = {};
-
     const rawData = sampleData(datasetData.data, samplePct[0]);
-    const allCols = selectedDatasetObj?.columns || [];
     const tVal = tThreshold[0] / 100;
-
     const steps: { id: string; label: string; fn: () => void }[] = [];
-
-    if (selectedAttacks.includes("prosecutor"))          steps.push({ id: "prosecutor",          label: "Prosecutor Attack (Within-Dataset Re-ID)...",         fn: () => { newResults.prosecutor          = runProsecutorAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal); } });
-    if (selectedAttacks.includes("journalist"))          steps.push({ id: "journalist",          label: "Journalist Attack (Population-Based Re-ID)...",        fn: () => { newResults.journalist          = runJournalistAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal, samplePct[0]); } });
-    if (selectedAttacks.includes("marketer"))            steps.push({ id: "marketer",            label: "Marketer Attack (Bulk Commercial Re-ID)...",           fn: () => { newResults.marketer            = runMarketerAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0], tVal, kThreshold[0]); } });
-    if (selectedAttacks.includes("singlingOut"))         steps.push({ id: "singlingOut",         label: "Singling Out Attack (GDPR Singling-Out Standard)...",   fn: () => { newResults.singlingOut         = runSingleOutAttack(rawData, quasiIdentifiers, sensitiveAttributes, kThreshold[0], lThreshold[0], tVal); } });
-    if (selectedAttacks.includes("inference"))           steps.push({ id: "inference",           label: "Inference Attack (Form A+B: EC Homogeneity & Predictive)...", fn: () => { newResults.inference           = runInferenceAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0]); } });
-    if (selectedAttacks.includes("membership"))          steps.push({ id: "membership",          label: "Membership Inference Attack (Gower NN + Population Rarity)...", fn: () => { newResults.membership          = runMembershipAttack(rawData, quasiIdentifiers, sensitiveAttributes, autoAssist?.columnGroups.directIdentifiers ?? []); } });
-    if (selectedAttacks.includes("recordLinkage"))       steps.push({ id: "recordLinkage",       label: "Record Linkage Attack (External Dataset Re-ID)...",          fn: () => { newResults.recordLinkage       = runRecordLinkageAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal); } });
-    if (selectedAttacks.includes("attributeDisclosure")) steps.push({ id: "attributeDisclosure", label: "Attribute Disclosure Attack (Sensitive Inference)...",        fn: () => { newResults.attributeDisclosure = runAttributeDisclosureAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0], tVal); } });
-    if (selectedAttacks.includes("differencing"))        steps.push({ id: "differencing",        label: "Differencing Attack (Aggregate Query Leakage)...",            fn: () => { newResults.differencing        = runDifferencingAttack(rawData, quasiIdentifiers, sensitiveAttributes, kThreshold[0], lThreshold[0], tVal); } });
-    if (selectedAttacks.includes("modelInversion"))      steps.push({ id: "modelInversion",      label: "Model Inversion Attack (EC-Based Reconstruction)...",      fn: () => { newResults.modelInversion      = runModelInversionAttack(rawData, quasiIdentifiers, sensitiveAttributes, kThreshold[0], lThreshold[0], tVal); } });
-
+    if (selectedAttacks.includes("prosecutor"))          steps.push({ id: "prosecutor",          label: "Prosecutor Attack",         fn: () => { newResults.prosecutor          = runProsecutorAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal); } });
+    if (selectedAttacks.includes("journalist"))          steps.push({ id: "journalist",          label: "Journalist Attack",         fn: () => { newResults.journalist          = runJournalistAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal, samplePct[0]); } });
+    if (selectedAttacks.includes("marketer"))            steps.push({ id: "marketer",            label: "Marketer Attack",           fn: () => { newResults.marketer            = runMarketerAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0], tVal, kThreshold[0]); } });
+    if (selectedAttacks.includes("singlingOut"))         steps.push({ id: "singlingOut",         label: "Singling Out Attack",       fn: () => { newResults.singlingOut         = runSingleOutAttack(rawData, quasiIdentifiers, sensitiveAttributes, kThreshold[0], lThreshold[0], tVal); } });
+    if (selectedAttacks.includes("inference"))           steps.push({ id: "inference",           label: "Inference Attack",          fn: () => { newResults.inference           = runInferenceAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0]); } });
+    if (selectedAttacks.includes("membership"))          steps.push({ id: "membership",          label: "Membership Attack",         fn: () => { newResults.membership          = runMembershipAttack(rawData, quasiIdentifiers, sensitiveAttributes, autoAssist?.columnGroups.directIdentifiers ?? []); } });
+    if (selectedAttacks.includes("recordLinkage"))       steps.push({ id: "recordLinkage",       label: "Record Linkage Attack",     fn: () => { newResults.recordLinkage       = runRecordLinkageAttack(rawData, quasiIdentifiers, kThreshold[0], sensitiveAttributes, lThreshold[0], tVal); } });
+    if (selectedAttacks.includes("attributeDisclosure")) steps.push({ id: "attributeDisclosure", label: "Attribute Disclosure",      fn: () => { newResults.attributeDisclosure = runAttributeDisclosureAttack(rawData, quasiIdentifiers, sensitiveAttributes, lThreshold[0], tVal); } });
+    if (selectedAttacks.includes("differencing"))        steps.push({ id: "differencing",        label: "Differencing Attack",       fn: () => { newResults.differencing        = runDifferencingAttack(rawData, quasiIdentifiers, sensitiveAttributes, kThreshold[0], lThreshold[0], tVal); } });
+    if (selectedAttacks.includes("modelInversion"))      steps.push({ id: "modelInversion",      label: "Model Inversion Attack",    fn: () => { newResults.modelInversion      = runModelInversionAttack(rawData, quasiIdentifiers, sensitiveAttributes, kThreshold[0], lThreshold[0], tVal); } });
     for (let i = 0; i < steps.length; i++) {
-      setProgress({ step: `${i + 1}/${steps.length}: Running ${steps[i].label}`, pct: Math.round((i / steps.length) * 100) });
-      await new Promise((r) => setTimeout(r, 50)); // yield to UI
+      setProgress({ step: `${i + 1}/${steps.length}: Running ${steps[i].label}...`, pct: Math.round((i / steps.length) * 100) });
+      await new Promise((r) => setTimeout(r, 50));
       steps[i].fn();
       setResults({ ...newResults });
       await new Promise((r) => setTimeout(r, 20));
     }
-
-    // Composite score — pass full result objects so canonical score fields and
-    // priority-action details (singletons, ADR, DDR, etc.) are all available.
     newResults.composite = computeCompositeScore(
-      {
-        prosecutor:          newResults.prosecutor,
-        journalist:          newResults.journalist,
-        marketer:            newResults.marketer,
-        singlingOut:         newResults.singlingOut,
-        inference:           newResults.inference,
-        membership:          newResults.membership,
-        recordLinkage:       newResults.recordLinkage,
-        attributeDisclosure: newResults.attributeDisclosure,
-        differencing:        newResults.differencing,
-        modelInversion:      newResults.modelInversion,
-      },
-      kThreshold[0],
-      lThreshold[0],
-      tThreshold[0] / 100,
+      { prosecutor: newResults.prosecutor, journalist: newResults.journalist, marketer: newResults.marketer, singlingOut: newResults.singlingOut, inference: newResults.inference, membership: newResults.membership, recordLinkage: newResults.recordLinkage, attributeDisclosure: newResults.attributeDisclosure, differencing: newResults.differencing, modelInversion: newResults.modelInversion },
+      kThreshold[0], lThreshold[0], tThreshold[0] / 100,
     );
-
     setResults(newResults);
     setProgress(null);
     setRunning(false);
-    setActiveTab(steps[0]?.id || "prosecutor");
-
     toast({ title: "Assessment complete", description: `Composite risk score: ${newResults.composite.score}/100 (${newResults.composite.riskLevel})` });
   }, [selectedDataset, datasetData, quasiIdentifiers, sensitiveAttributes, kThreshold, lThreshold, tThreshold, samplePct, selectedAttacks, selectedDatasetObj]);
 
   const hasResults = Object.keys(results).length > 0;
 
+  // ── Full Report View (fullHeight, no sidebar — mirrors Data Upload full view) ──
+  if (viewReport) {
+    const attackMeta = viewReport === "comparison"
+      ? { label: "Composite Risk Comparison", description: "Weighted composite score across all 10 attack types — NIST 8053 methodology" }
+      : ATTACKS.find((a) => a.id === viewReport);
+    const riskResult = viewReport === "comparison" ? results.composite : results[viewReport as AttackId];
+
+    return (
+      <DashboardLayout title="Risk Assessment" breadcrumbs={[{ label: "Risk Assessment" }]} fullHeight>
+        <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden" style={poppins}>
+          {/* Back bar */}
+          <div className="flex items-center justify-between mb-5 shrink-0">
+            <button
+              onClick={() => setViewReport(null)}
+              className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm font-medium"
+              style={poppins}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Assessment
+            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-slate-800" style={poppins}>{attackMeta?.label}</span>
+              {riskResult && riskBadge(riskResult.riskLevel)}
+            </div>
+          </div>
+
+          {/* Attack description bar */}
+          <div className="border-b border-slate-100 pb-4 mb-6 shrink-0">
+            <p className="text-xs text-slate-400 leading-relaxed" style={poppins}>{attackMeta?.description}</p>
+          </div>
+
+          {/* Scrollable report content */}
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            <div className="space-y-6 pb-8">
+              {viewReport === "comparison"        && results.composite         && <ComparisonDashboard results={results} />}
+              {viewReport === "prosecutor"         && results.prosecutor        && <ProsecutorReport r={results.prosecutor} kThreshold={kThreshold[0]} />}
+              {viewReport === "journalist"         && results.journalist        && <JournalistReport r={results.journalist} kThreshold={kThreshold[0]} />}
+              {viewReport === "marketer"           && results.marketer          && <MarketerReport r={results.marketer} />}
+              {viewReport === "singlingOut"        && results.singlingOut       && <SinglingOutReport r={results.singlingOut} />}
+              {viewReport === "inference"          && results.inference         && <InferenceReport r={results.inference} />}
+              {viewReport === "membership"         && results.membership        && <MembershipReport r={results.membership} />}
+              {viewReport === "recordLinkage"      && results.recordLinkage     && <RecordLinkageReport r={results.recordLinkage} kThreshold={kThreshold[0]} />}
+              {viewReport === "attributeDisclosure"&& results.attributeDisclosure && <AttributeDisclosureReport r={results.attributeDisclosure} />}
+              {viewReport === "differencing"       && results.differencing      && <DifferencingReport r={results.differencing} />}
+              {viewReport === "modelInversion"     && results.modelInversion    && <ModelInversionReport r={results.modelInversion} kVal={kThreshold[0]} lVal={lThreshold[0]} tVal={tThreshold[0] / 100} />}
+            </div>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // ── Main Configuration + Results View ──
   return (
     <DashboardLayout title="Risk Assessment" breadcrumbs={[{ label: "Risk Assessment" }]}>
-      <div className="grid gap-6 lg:grid-cols-4">
-        {/* ── LEFT SIDEBAR ── */}
-        <div className="lg:col-span-1 space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <AlertTriangle className="h-4 w-4" /> Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {/* Dataset */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dataset</Label>
-                <Select value={selectedDataset} onValueChange={(v) => { setSelectedDataset(v); setQuasiIdentifiers([]); setSensitiveAttributes([]); }}>
-                  <SelectTrigger data-testid="select-dataset" className="h-8 text-sm">
-                    <SelectValue placeholder="Choose a dataset" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {datasets?.map((d) => <SelectItem key={d.id} value={d.id.toString()}>{d.originalName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+      <div className="grid gap-8" style={{ ...poppins, gridTemplateColumns: "300px 1fr" }}>
 
-              {selectedDatasetObj && (
-                <>
-                  {autoAssistLoading && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Analysing columns…
-                    </div>
-                  )}
+        {/* ── LEFT PANEL — clean config, no card wrapper ── */}
+        <div className="space-y-5 min-w-0" style={poppins}>
 
-                  {/* Direct ID warnings */}
-                  {autoAssist && autoAssist.columnGroups.directIdentifiers.length > 0 && (
-                    <div className="rounded-md border border-orange-300 bg-orange-50 dark:bg-orange-950/30 p-2 space-y-1">
-                      <p className="text-xs font-semibold text-orange-700 dark:text-orange-400 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3" /> Direct Identifiers Detected
-                      </p>
-                      {autoAssist.columnGroups.directIdentifiers.map((col) => (
-                        <p key={col} className="text-xs text-orange-600 dark:text-orange-300 pl-1">⚠ {col}</p>
-                      ))}
-                      <p className="text-[10px] text-orange-500 dark:text-orange-400">Remove these before public release.</p>
-                    </div>
-                  )}
+          {/* Dataset */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Dataset</p>
+            <Select value={selectedDataset} onValueChange={(v) => { setSelectedDataset(v); setQuasiIdentifiers([]); setSensitiveAttributes([]); setResults({}); }}>
+              <SelectTrigger data-testid="select-dataset" className="h-9 text-sm border-slate-200 rounded-xl" style={poppins}>
+                <SelectValue placeholder="Choose a dataset" />
+              </SelectTrigger>
+              <SelectContent>
+                {datasets?.map((d) => <SelectItem key={d.id} value={d.id.toString()}>{d.originalName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
 
-                  {/* QI × Direct Identifier conflict warning */}
-                  {autoAssist && (() => {
-                    const conflicts = quasiIdentifiers.filter((qi) =>
-                      autoAssist.columnGroups.directIdentifiers.includes(qi)
-                    );
-                    if (conflicts.length === 0) return null;
-                    return (
-                      <div className="rounded-md border-2 border-red-500 bg-red-50 dark:bg-red-950/40 p-2 space-y-1">
-                        <p className="text-xs font-bold text-red-700 dark:text-red-400 flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" /> ⚠️ CONFIGURATION CONFLICT
-                        </p>
-                        <p className="text-xs text-red-600 dark:text-red-300">
-                          The following column{conflicts.length > 1 ? "s are" : " is"} flagged as a Direct Identifier AND selected as a Quasi-Identifier. Using a direct identifier as a QI in a privacy assessment is a configuration error — it inflates singularity and makes L-Diversity / T-Closeness results misleading:
-                        </p>
-                        {conflicts.map((col) => (
-                          <p key={col} className="text-xs font-bold text-red-700 dark:text-red-400 pl-1">🔴 {col}</p>
-                        ))}
-                        <p className="text-[10px] text-red-500 dark:text-red-400">
-                          Action: Remove {conflicts.length > 1 ? "these columns" : "this column"} from the QI list, OR suppress {conflicts.length > 1 ? "them" : "it"} from the dataset before running the assessment.
-                        </p>
-                      </div>
-                    );
-                  })()}
-
-                  {/* QI columns */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quasi-Identifiers</Label>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="text-[10px] h-4 px-1">{quasiIdentifiers.length} sel.</Badge>
-                        {quasiIdentifiers.length > 0 && (
-                          <button
-                            onClick={() => setQuasiIdentifiers([])}
-                            className="text-[10px] text-muted-foreground hover:text-destructive underline leading-none"
-                            title="Uncheck all quasi-identifiers"
-                          >
-                            Uncheck all
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <ScrollArea className="h-[120px] rounded-md border p-2">
-                      <div className="space-y-1">
-                        {selectedDatasetObj.columns?.map((col) => {
-                          const cls = autoAssist?.classifications[col];
-                          const badge = cls?.confidenceLabel === "HIGH" ? "🟢" : cls?.confidenceLabel === "MEDIUM" ? "🟡" : cls ? "🔵" : null;
-                          return (
-                            <div key={col} className="flex items-center gap-1.5" title={cls?.reason ?? col}>
-                              <Checkbox id={`qi-${col}`} checked={quasiIdentifiers.includes(col)} onCheckedChange={() => toggleColumn(col, "quasi")} />
-                              <label htmlFor={`qi-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
-                              {badge && cls?.classification === "QUASI_ID" && <span className="text-[10px]">{badge}</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </ScrollArea>
-                  </div>
-
-                  {/* SA columns */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sensitive Attributes</Label>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="text-[10px] h-4 px-1">{sensitiveAttributes.length} sel.</Badge>
-                        {sensitiveAttributes.length > 0 && (
-                          <button
-                            onClick={() => setSensitiveAttributes([])}
-                            className="text-[10px] text-muted-foreground hover:text-destructive underline leading-none"
-                            title="Uncheck all sensitive attributes"
-                          >
-                            Uncheck all
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <ScrollArea className="h-[100px] rounded-md border p-2">
-                      <div className="space-y-1">
-                        {selectedDatasetObj.columns?.map((col) => {
-                          const cls = autoAssist?.classifications[col];
-                          const badge = cls?.confidenceLabel === "HIGH" ? "🟢" : cls?.confidenceLabel === "MEDIUM" ? "🟡" : cls ? "🔵" : null;
-                          return (
-                            <div key={col} className="flex items-center gap-1.5" title={cls?.reason ?? col}>
-                              <Checkbox id={`sa-${col}`} checked={sensitiveAttributes.includes(col)} onCheckedChange={() => toggleColumn(col, "sensitive")} />
-                              <label htmlFor={`sa-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
-                              {badge && cls?.classification === "SENSITIVE" && <span className="text-[10px]">{badge}</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </ScrollArea>
-                  </div>
-
-                  {autoAssist && (
-                    <Button variant="outline" size="sm" className="w-full h-7 text-xs" onClick={applyAutoSuggestions}>
-                      ↺ Reset to Auto-Suggestions
-                    </Button>
-                  )}
-                </>
+          {selectedDatasetObj && (
+            <>
+              {autoAssistLoading && (
+                <div className="flex items-center gap-2 text-xs text-slate-400 py-1" style={poppins}>
+                  <Loader2 className="h-3 w-3 animate-spin" /> Analysing columns…
+                </div>
               )}
 
-              {/* Sliders */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">K-Anonymity</Label>
-                  <div className="flex items-center gap-1">
-                    {autoAssist && <span className="text-[10px] text-muted-foreground">Sug: {autoAssist.suggestedParams.k}</span>}
-                    <Badge variant="outline" className="text-xs">{kThreshold[0]}</Badge>
-                  </div>
-                </div>
-                <Slider value={kThreshold} onValueChange={setKThreshold} min={2} max={25} step={1} />
-                {autoAssist && <p className="text-[10px] text-muted-foreground leading-tight">{autoAssist.paramDetails.k.reason}</p>}
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">L-Diversity</Label>
-                  <div className="flex items-center gap-1">
-                    {autoAssist && <span className="text-[10px] text-muted-foreground">Sug: {autoAssist.suggestedParams.l}</span>}
-                    <Badge variant="outline" className="text-xs">{lThreshold[0]}</Badge>
-                  </div>
-                </div>
-                <Slider value={lThreshold} onValueChange={setLThreshold} min={2} max={10} step={1} />
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">T-Closeness</Label>
-                  <div className="flex items-center gap-1">
-                    {autoAssist && <span className="text-[10px] text-muted-foreground">Sug: {autoAssist.suggestedParams.t.toFixed(2)}</span>}
-                    <Badge variant="outline" className="text-xs">{(tThreshold[0] / 100).toFixed(2)}</Badge>
-                  </div>
-                </div>
-                <Slider value={tThreshold} onValueChange={setTThreshold} min={5} max={50} step={5} />
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sample Size</Label>
-                  <div className="flex items-center gap-1">
-                    {autoAssist && <span className="text-[10px] text-muted-foreground">Sug: {autoAssist.suggestedParams.samplePct}%</span>}
-                    <Badge variant="outline" className="text-xs">{samplePct[0]}%</Badge>
-                  </div>
-                </div>
-                <Slider value={samplePct} onValueChange={setSamplePct} min={10} max={100} step={10} />
-                {autoAssist && <p className="text-[10px] text-muted-foreground leading-tight">{autoAssist.paramDetails.sample.reason}</p>}
-              </div>
-
-              {/* Attack selection */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Attack Scenarios</Label>
-                <div className="space-y-1.5">
-                  {ATTACKS.map((a) => (
-                    <div key={a.id} className="flex items-start gap-2">
-                      <Checkbox id={`atk-${a.id}`} checked={selectedAttacks.includes(a.id)} onCheckedChange={() => toggleAttack(a.id)} />
-                      <div>
-                        <label htmlFor={`atk-${a.id}`} className="text-xs font-medium cursor-pointer flex items-center gap-1">{a.icon}{a.short}</label>
-                      </div>
-                    </div>
+              {/* Direct ID warning */}
+              {autoAssist && autoAssist.columnGroups.directIdentifiers.length > 0 && (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 space-y-1">
+                  <p className="text-xs font-semibold text-orange-700 flex items-center gap-1.5" style={poppins}>
+                    <AlertTriangle className="h-3.5 w-3.5" /> Direct Identifiers Detected
+                  </p>
+                  {autoAssist.columnGroups.directIdentifiers.map((col) => (
+                    <p key={col} className="text-xs text-orange-600 pl-1" style={poppins}>⚠ {col}</p>
                   ))}
-                </div>
-              </div>
-
-              {/* Progress */}
-              {progress && (
-                <div className="space-y-1.5">
-                  <div className="text-xs text-muted-foreground">{progress.step}</div>
-                  <Progress value={progress.pct} className="h-2" />
+                  <p className="text-[10px] text-orange-500 leading-tight" style={poppins}>Remove these before public release.</p>
                 </div>
               )}
 
-              <Button
-                className="w-full"
-                onClick={handleRunAssessment}
-                disabled={running || !selectedDataset || quasiIdentifiers.length === 0}
-                data-testid="button-run-assessment"
-              >
-                {running ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Analyzing...</> : <><Play className="mr-2 h-4 w-4" />Run Assessment</>}
-              </Button>
-            </CardContent>
-          </Card>
+              {/* QI × Direct Identifier conflict warning */}
+              {autoAssist && (() => {
+                const conflicts = quasiIdentifiers.filter((qi) => autoAssist.columnGroups.directIdentifiers.includes(qi));
+                if (conflicts.length === 0) return null;
+                return (
+                  <div className="rounded-xl border-2 border-red-400 bg-red-50 p-3 space-y-1">
+                    <p className="text-xs font-bold text-red-700 flex items-center gap-1.5" style={poppins}>
+                      <AlertTriangle className="h-3.5 w-3.5" /> Configuration Conflict
+                    </p>
+                    <p className="text-xs text-red-600 leading-snug" style={poppins}>
+                      {conflicts.length > 1 ? "These columns are" : "This column is"} flagged as Direct Identifiers and selected as Quasi-Identifiers — remove {conflicts.length > 1 ? "them" : "it"} from QI list.
+                    </p>
+                    {conflicts.map((col) => (
+                      <p key={col} className="text-xs font-bold text-red-700 pl-1" style={poppins}>🔴 {col}</p>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Quasi-Identifiers */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Quasi-Identifiers</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400" style={poppins}>{quasiIdentifiers.length} sel.</span>
+                    {quasiIdentifiers.length > 0 && (
+                      <button onClick={() => setQuasiIdentifiers([])} className="text-[10px] text-slate-400 hover:text-red-500 underline" style={poppins}>Uncheck all</button>
+                    )}
+                  </div>
+                </div>
+                <div className="border border-slate-100 rounded-xl p-2 max-h-[140px] overflow-y-auto space-y-1">
+                  {selectedDatasetObj.columns?.map((col) => {
+                    const cls = autoAssist?.classifications[col];
+                    const badge = cls?.confidenceLabel === "HIGH" ? "🟢" : cls?.confidenceLabel === "MEDIUM" ? "🟡" : cls ? "🔵" : null;
+                    return (
+                      <div key={col} className="flex items-center gap-2" title={cls?.reason ?? col}>
+                        <Checkbox id={`qi-${col}`} checked={quasiIdentifiers.includes(col)} onCheckedChange={() => toggleColumn(col, "quasi")} />
+                        <label htmlFor={`qi-${col}`} className="text-xs cursor-pointer flex-1 truncate text-slate-700" style={poppins}>{col}</label>
+                        {badge && cls?.classification === "QUASI_ID" && <span className="text-[10px]">{badge}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sensitive Attributes */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Sensitive Attributes</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400" style={poppins}>{sensitiveAttributes.length} sel.</span>
+                    {sensitiveAttributes.length > 0 && (
+                      <button onClick={() => setSensitiveAttributes([])} className="text-[10px] text-slate-400 hover:text-red-500 underline" style={poppins}>Uncheck all</button>
+                    )}
+                  </div>
+                </div>
+                <div className="border border-slate-100 rounded-xl p-2 max-h-[120px] overflow-y-auto space-y-1">
+                  {selectedDatasetObj.columns?.map((col) => {
+                    const cls = autoAssist?.classifications[col];
+                    const badge = cls?.confidenceLabel === "HIGH" ? "🟢" : cls?.confidenceLabel === "MEDIUM" ? "🟡" : cls ? "🔵" : null;
+                    return (
+                      <div key={col} className="flex items-center gap-2" title={cls?.reason ?? col}>
+                        <Checkbox id={`sa-${col}`} checked={sensitiveAttributes.includes(col)} onCheckedChange={() => toggleColumn(col, "sensitive")} />
+                        <label htmlFor={`sa-${col}`} className="text-xs cursor-pointer flex-1 truncate text-slate-700" style={poppins}>{col}</label>
+                        {badge && cls?.classification === "SENSITIVE" && <span className="text-[10px]">{badge}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {autoAssist && (
+                <button onClick={applyAutoSuggestions} className="w-full h-8 rounded-xl border border-slate-200 text-xs text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors font-medium" style={poppins}>
+                  ↺ Reset to Auto-Suggestions
+                </button>
+              )}
+            </>
+          )}
+
+          <div className="border-t border-slate-100" />
+
+          {/* Sliders */}
+          {[
+            { label: "K-Anonymity", value: kThreshold, onChange: setKThreshold, min: 2, max: 25, step: 1, display: String(kThreshold[0]), sug: autoAssist ? `Sug: ${autoAssist.suggestedParams.k}` : null, hint: autoAssist?.paramDetails.k.reason },
+            { label: "L-Diversity", value: lThreshold, onChange: setLThreshold, min: 2, max: 10, step: 1, display: String(lThreshold[0]), sug: autoAssist ? `Sug: ${autoAssist.suggestedParams.l}` : null, hint: null },
+            { label: "T-Closeness", value: tThreshold, onChange: setTThreshold, min: 5, max: 50, step: 5, display: (tThreshold[0] / 100).toFixed(2), sug: autoAssist ? `Sug: ${autoAssist.suggestedParams.t.toFixed(2)}` : null, hint: null },
+            { label: "Sample Size", value: samplePct, onChange: setSamplePct, min: 10, max: 100, step: 10, display: `${samplePct[0]}%`, sug: autoAssist ? `Sug: ${autoAssist.suggestedParams.samplePct}%` : null, hint: autoAssist?.paramDetails.sample.reason },
+          ].map(({ label, value, onChange, min, max, step, display, sug, hint }) => (
+            <div key={label} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>{label}</p>
+                <div className="flex items-center gap-1.5">
+                  {sug && <span className="text-[10px] text-slate-400" style={poppins}>{sug}</span>}
+                  <span className="text-xs font-semibold text-slate-700 tabular-nums" style={poppins}>{display}</span>
+                </div>
+              </div>
+              <Slider value={value} onValueChange={onChange} min={min} max={max} step={step} />
+              {hint && <p className="text-[10px] text-slate-400 leading-tight" style={poppins}>{hint}</p>}
+            </div>
+          ))}
+
+          <div className="border-t border-slate-100" />
+
+          {/* Attack Scenarios */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Attack Scenarios</p>
+            <div className="space-y-2">
+              {ATTACKS.map((a) => (
+                <div key={a.id} className="flex items-center gap-2">
+                  <Checkbox id={`atk-${a.id}`} checked={selectedAttacks.includes(a.id)} onCheckedChange={() => toggleAttack(a.id)} />
+                  <label htmlFor={`atk-${a.id}`} className="text-xs text-slate-700 cursor-pointer" style={poppins}>{a.short}</label>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100" />
+
+          {/* Progress */}
+          {progress && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 leading-tight" style={poppins}>{progress.step}</p>
+              <Progress value={progress.pct} className="h-1.5" />
+            </div>
+          )}
+
+          {/* Run Button */}
+          <button
+            className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+            onClick={handleRunAssessment}
+            disabled={running || !selectedDataset || quasiIdentifiers.length === 0}
+            data-testid="button-run-assessment"
+            style={poppins}
+          >
+            {running
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Analyzing…</>
+              : <><Play className="h-4 w-4" /> Run Assessment</>}
+          </button>
         </div>
 
         {/* ── RIGHT PANEL ── */}
-        <div className="lg:col-span-3">
+        <div className="min-w-0" style={poppins}>
           {!hasResults ? (
             autoAssist ? (
-              <div className="space-y-4">
-                {/* Banner */}
-                <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
-                  <CardContent className="py-3 px-4">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-full bg-blue-100 dark:bg-blue-900 p-1.5"><Network className="h-4 w-4 text-blue-600 dark:text-blue-400" /></div>
-                      <div>
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">📋 Auto-Assist Column Analysis</p>
-                        <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
-                          Analysed <strong>{autoAssist.datasetInfo.rows}</strong> rows × <strong>{autoAssist.datasetInfo.columns}</strong> columns.
-                          Pre-selected <strong>{autoAssist.columnGroups.quasiIdentifiers.length}</strong> QIs and <strong>{autoAssist.columnGroups.sensitiveAttributes.length}</strong> sensitive attributes.
-                          Review and adjust in the left sidebar, then run the assessment.
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+              <div className="space-y-6">
+                {/* Auto-Assist Banner */}
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4">
+                  <p className="text-sm font-semibold text-blue-900 mb-0.5" style={poppins}>Auto-Assist Column Analysis</p>
+                  <p className="text-xs text-blue-700 leading-relaxed" style={poppins}>
+                    Analysed <strong>{autoAssist.datasetInfo.rows}</strong> rows × <strong>{autoAssist.datasetInfo.columns}</strong> columns.
+                    Pre-selected <strong>{autoAssist.columnGroups.quasiIdentifiers.length}</strong> QIs and{" "}
+                    <strong>{autoAssist.columnGroups.sensitiveAttributes.length}</strong> sensitive attributes.
+                    Review and adjust in the left panel, then run the assessment.
+                  </p>
+                </div>
 
-                {/* 4-Quadrant Classification Grid */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* 4-Quadrant Classification Grid — no card wrappers */}
+                <div className="grid grid-cols-2 gap-5">
                   {/* Direct Identifiers */}
-                  <Card className="border-orange-200 dark:border-orange-800">
-                    <CardHeader className="pb-2 pt-3 px-4">
-                      <CardTitle className="text-xs font-semibold text-orange-700 dark:text-orange-400 flex items-center gap-1.5">
-                        <AlertTriangle className="h-3.5 w-3.5" /> DIRECT IDENTIFIERS
-                      </CardTitle>
-                      <CardDescription className="text-[10px]">May need removal before release</CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-3 space-y-1.5">
+                  <div>
+                    <p className="text-xs font-semibold text-orange-600 uppercase tracking-wider mb-1" style={poppins}>Direct Identifiers</p>
+                    <p className="text-[10px] text-slate-400 mb-2" style={poppins}>May need removal before release</p>
+                    <div className="space-y-1.5">
                       {autoAssist.columnGroups.directIdentifiers.length === 0
-                        ? <p className="text-xs text-muted-foreground italic">None detected ✓</p>
+                        ? <p className="text-xs text-slate-400 italic" style={poppins}>None detected ✓</p>
                         : autoAssist.columnGroups.directIdentifiers.map((col) => {
                             const c = autoAssist.classifications[col];
                             return (
-                              <div key={col} className="rounded bg-orange-50 dark:bg-orange-950/30 px-2 py-1">
+                              <div key={col} className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-xs font-medium text-orange-800 dark:text-orange-300">{col}</span>
-                                  <Badge className="text-[10px] h-4 px-1 bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300 border-0">{c.confidence}%</Badge>
+                                  <span className="text-xs font-semibold text-orange-800" style={poppins}>{col}</span>
+                                  <span className="text-[10px] text-orange-500 font-mono">{c.confidence}%</span>
                                 </div>
-                                <p className="text-[10px] text-orange-600 dark:text-orange-400 mt-0.5 leading-tight">{c.reason}</p>
+                                <p className="text-[10px] text-orange-600 mt-0.5 leading-tight" style={poppins}>{c.reason}</p>
                               </div>
                             );
-                          })
-                      }
-                    </CardContent>
-                  </Card>
+                          })}
+                    </div>
+                  </div>
 
                   {/* Quasi-Identifiers */}
-                  <Card className="border-red-200 dark:border-red-800">
-                    <CardHeader className="pb-2 pt-3 px-4">
-                      <CardTitle className="text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-1.5">
-                        🔴 QUASI-IDENTIFIERS
-                      </CardTitle>
-                      <CardDescription className="text-[10px]">Can indirectly identify individuals</CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-3">
-                      <ScrollArea className="h-[140px]">
-                        <div className="space-y-1.5">
-                          {autoAssist.columnGroups.quasiIdentifiers.length === 0
-                            ? <p className="text-xs text-muted-foreground italic">None detected</p>
-                            : autoAssist.columnGroups.quasiIdentifiers.map((col) => {
-                                const c = autoAssist.classifications[col];
-                                const contrib = autoAssist.qiContributions[col];
-                                const badge = c.confidenceLabel === "HIGH" ? "🟢" : c.confidenceLabel === "MEDIUM" ? "🟡" : "🔵";
-                                return (
-                                  <div key={col} className="rounded bg-red-50 dark:bg-red-950/30 px-2 py-1">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="text-xs font-medium text-red-800 dark:text-red-300 truncate">{col}</span>
-                                      <span className="text-[10px] shrink-0">{badge}</span>
-                                    </div>
-                                    <p className="text-[10px] text-red-500 dark:text-red-400 mt-0.5 leading-tight">{c.reason}</p>
-                                    {contrib && <p className="text-[10px] text-red-400 dark:text-red-500 font-mono">+{contrib.marginalRiskPct}% marginal EC risk</p>}
-                                  </div>
-                                );
-                              })
-                          }
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
+                  <div>
+                    <p className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-1" style={poppins}>Quasi-Identifiers</p>
+                    <p className="text-[10px] text-slate-400 mb-2" style={poppins}>Can indirectly identify individuals</p>
+                    <div className="max-h-[200px] overflow-y-auto space-y-1.5">
+                      {autoAssist.columnGroups.quasiIdentifiers.length === 0
+                        ? <p className="text-xs text-slate-400 italic" style={poppins}>None detected</p>
+                        : autoAssist.columnGroups.quasiIdentifiers.map((col) => {
+                            const c = autoAssist.classifications[col];
+                            const contrib = autoAssist.qiContributions[col];
+                            const badge = c.confidenceLabel === "HIGH" ? "🟢" : c.confidenceLabel === "MEDIUM" ? "🟡" : "🔵";
+                            return (
+                              <div key={col} className="rounded-lg bg-red-50 border border-red-100 px-3 py-2">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-semibold text-red-800 truncate" style={poppins}>{col}</span>
+                                  <span className="text-[10px] shrink-0">{badge}</span>
+                                </div>
+                                <p className="text-[10px] text-red-500 mt-0.5 leading-tight" style={poppins}>{c.reason}</p>
+                                {contrib && <p className="text-[10px] text-red-400 font-mono">+{contrib.marginalRiskPct}% marginal EC risk</p>}
+                              </div>
+                            );
+                          })}
+                    </div>
+                  </div>
 
                   {/* Sensitive Attributes */}
-                  <Card className="border-amber-200 dark:border-amber-800">
-                    <CardHeader className="pb-2 pt-3 px-4">
-                      <CardTitle className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                        🟠 SENSITIVE ATTRIBUTES
-                      </CardTitle>
-                      <CardDescription className="text-[10px]">Disclosure could harm individuals</CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-3">
-                      <ScrollArea className="h-[140px]">
-                        <div className="space-y-1.5">
-                          {autoAssist.columnGroups.sensitiveAttributes.length === 0
-                            ? <p className="text-xs text-muted-foreground italic">None detected</p>
-                            : autoAssist.columnGroups.sensitiveAttributes.map((col) => {
-                                const c = autoAssist.classifications[col];
-                                const badge = c.confidenceLabel === "HIGH" ? "🟢" : c.confidenceLabel === "MEDIUM" ? "🟡" : "🔵";
-                                return (
-                                  <div key={col} className="rounded bg-amber-50 dark:bg-amber-950/30 px-2 py-1">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="text-xs font-medium text-amber-800 dark:text-amber-300 truncate">{col}</span>
-                                      <span className="text-[10px] shrink-0">{badge}</span>
-                                    </div>
-                                    <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 leading-tight">{c.reason}</p>
-                                  </div>
-                                );
-                              })
-                          }
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
+                  <div>
+                    <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-1" style={poppins}>Sensitive Attributes</p>
+                    <p className="text-[10px] text-slate-400 mb-2" style={poppins}>Disclosure could harm individuals</p>
+                    <div className="max-h-[200px] overflow-y-auto space-y-1.5">
+                      {autoAssist.columnGroups.sensitiveAttributes.length === 0
+                        ? <p className="text-xs text-slate-400 italic" style={poppins}>None detected</p>
+                        : autoAssist.columnGroups.sensitiveAttributes.map((col) => {
+                            const c = autoAssist.classifications[col];
+                            const badge = c.confidenceLabel === "HIGH" ? "🟢" : c.confidenceLabel === "MEDIUM" ? "🟡" : "🔵";
+                            return (
+                              <div key={col} className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-semibold text-amber-800 truncate" style={poppins}>{col}</span>
+                                  <span className="text-[10px] shrink-0">{badge}</span>
+                                </div>
+                                <p className="text-[10px] text-amber-600 mt-0.5 leading-tight" style={poppins}>{c.reason}</p>
+                              </div>
+                            );
+                          })}
+                    </div>
+                  </div>
 
                   {/* Ignore */}
-                  <Card className="border-slate-200 dark:border-slate-700">
-                    <CardHeader className="pb-2 pt-3 px-4">
-                      <CardTitle className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                        ⚪ IGNORE
-                      </CardTitle>
-                      <CardDescription className="text-[10px]">No privacy relevance</CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-3">
-                      <ScrollArea className="h-[140px]">
-                        <div className="space-y-1">
-                          {autoAssist.columnGroups.ignore.length === 0
-                            ? <p className="text-xs text-muted-foreground italic">None</p>
-                            : autoAssist.columnGroups.ignore.map((col) => {
-                                const c = autoAssist.classifications[col];
-                                return (
-                                  <div key={col} className="flex items-center justify-between rounded bg-slate-50 dark:bg-slate-800/30 px-2 py-1">
-                                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate">{col}</span>
-                                    <span className="text-[10px] text-slate-400 shrink-0 ml-1">{c.confidence}%</span>
-                                  </div>
-                                );
-                              })
-                          }
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1" style={poppins}>Ignore</p>
+                    <p className="text-[10px] text-slate-400 mb-2" style={poppins}>No privacy relevance</p>
+                    <div className="max-h-[200px] overflow-y-auto space-y-1">
+                      {autoAssist.columnGroups.ignore.length === 0
+                        ? <p className="text-xs text-slate-400 italic" style={poppins}>None</p>
+                        : autoAssist.columnGroups.ignore.map((col) => {
+                            const c = autoAssist.classifications[col];
+                            return (
+                              <div key={col} className="flex items-center justify-between rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
+                                <span className="text-xs text-slate-500 truncate" style={poppins}>{col}</span>
+                                <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-2">{c.confidence}%</span>
+                              </div>
+                            );
+                          })}
+                    </div>
+                  </div>
                 </div>
 
-                {/* QI Contribution Table */}
+                {/* QI Contribution Ranking */}
                 {Object.keys(autoAssist.qiContributions).length > 0 && (
-                  <Card>
-                    <CardHeader className="pb-2 pt-3 px-4">
-                      <CardTitle className="text-sm flex items-center gap-2"><BarChart3 className="h-4 w-4 text-blue-600" /> QI Re-Identification Contribution Ranking</CardTitle>
-                      <CardDescription className="text-xs">How much each quasi-identifier increases re-identification risk</CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-3">
-                      {/* High-risk warning */}
-                      {Object.entries(autoAssist.qiContributions).some(([, v]) => v.marginalRiskPct > 30) && (
-                        <div className="mb-3 rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 p-3">
-                          <p className="text-xs font-semibold text-red-700 dark:text-red-400">⚠ High-Risk Quasi-Identifier Detected</p>
-                          {Object.entries(autoAssist.qiContributions)
-                            .filter(([, v]) => v.marginalRiskPct > 30)
-                            .map(([col, v]) => (
-                              <p key={col} className="text-xs text-red-600 dark:text-red-300 mt-1">
-                                <strong>{col}</strong> alone contributes +{v.marginalRiskPct}% to re-identification risk ({v.soloUniqueValues} unique values).
-                              </p>
-                            ))}
-                        </div>
-                      )}
-                      <div className="rounded-md border overflow-hidden">
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted/50">
-                            <tr>
-                              <th className="text-left px-3 py-2 font-semibold">Column</th>
-                              <th className="text-right px-3 py-2 font-semibold">Unique Values</th>
-                              <th className="text-right px-3 py-2 font-semibold">Marginal Risk</th>
-                              <th className="text-center px-3 py-2 font-semibold">Rank</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(autoAssist.qiContributions)
-                              .sort((a, b) => a[1].riskRank - b[1].riskRank)
-                              .map(([col, v]) => (
-                                <tr key={col} className="border-t border-border/50 hover:bg-muted/30 transition-colors">
-                                  <td className="px-3 py-2 font-medium truncate max-w-[120px]">{col}</td>
-                                  <td className="px-3 py-2 text-right font-mono">{v.soloUniqueValues}</td>
-                                  <td className="px-3 py-2 text-right">
-                                    <span className={v.marginalRiskPct > 30 ? "text-red-600 font-semibold" : v.marginalRiskPct > 10 ? "text-amber-600" : "text-green-600"}>
-                                      +{v.marginalRiskPct}%
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <span className={v.riskRank === 1 ? "text-red-600" : v.riskRank === 2 ? "text-amber-600" : "text-green-600"}>
-                                      {v.riskRank === 1 ? "🔴" : v.riskRank === 2 ? "🟡" : "🟢"} #{v.riskRank}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <BarChart3 className="h-4 w-4 text-blue-500" />
+                      <p className="text-sm font-semibold text-slate-800" style={poppins}>QI Re-Identification Contribution Ranking</p>
+                    </div>
+                    <p className="text-xs text-slate-400 mb-3" style={poppins}>How much each quasi-identifier increases re-identification risk</p>
+                    {Object.entries(autoAssist.qiContributions).some(([, v]) => v.marginalRiskPct > 30) && (
+                      <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                        <p className="text-xs font-semibold text-red-700 mb-1" style={poppins}>⚠ High-Risk Quasi-Identifier Detected</p>
+                        {Object.entries(autoAssist.qiContributions).filter(([, v]) => v.marginalRiskPct > 30).map(([col, v]) => (
+                          <p key={col} className="text-xs text-red-600" style={poppins}><strong>{col}</strong> alone contributes +{v.marginalRiskPct}% re-ID risk ({v.soloUniqueValues} unique values).</p>
+                        ))}
                       </div>
-                    </CardContent>
-                  </Card>
+                    )}
+                    <table className="w-full text-sm" style={poppins}>
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          <th className="text-left pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Column</th>
+                          <th className="text-right pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Unique Values</th>
+                          <th className="text-right pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Marginal Risk</th>
+                          <th className="text-right pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Rank</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {Object.entries(autoAssist.qiContributions).sort((a, b) => a[1].riskRank - b[1].riskRank).map(([col, v]) => (
+                          <tr key={col} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-2.5 text-slate-800 font-medium" style={poppins}>{col}</td>
+                            <td className="py-2.5 text-right text-slate-600 font-mono text-xs">{v.soloUniqueValues}</td>
+                            <td className="py-2.5 text-right">
+                              <span className={`text-xs font-semibold ${v.marginalRiskPct > 30 ? "text-red-600" : v.marginalRiskPct > 10 ? "text-amber-600" : "text-green-600"}`} style={poppins}>+{v.marginalRiskPct}%</span>
+                            </td>
+                            <td className="py-2.5 text-right">
+                              <span className={`text-xs font-semibold ${v.riskRank === 1 ? "text-red-600" : v.riskRank === 2 ? "text-amber-600" : "text-green-600"}`} style={poppins}>
+                                {v.riskRank === 1 ? "🔴" : v.riskRank === 2 ? "🟡" : "🟢"} #{v.riskRank}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
 
-                {/* Parameter Suggestion Panel */}
-                <Card>
-                  <CardHeader className="pb-2 pt-3 px-4">
-                    <CardTitle className="text-sm flex items-center gap-2">⚙️ Auto-Suggested Privacy Parameters</CardTitle>
-                    <CardDescription className="text-xs">Based on your data's equivalence class structure</CardDescription>
-                  </CardHeader>
-                  <CardContent className="px-4 pb-3 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: "K-Anonymity", value: `k = ${autoAssist.suggestedParams.k}`, reason: autoAssist.paramDetails.k.reason, color: "blue" },
-                        { label: "Sample Size", value: `${autoAssist.suggestedParams.samplePct}%`, reason: autoAssist.paramDetails.sample.reason, color: "purple" },
-                      ].map(({ label, value, reason, color }) => (
-                        <div key={label} className={`rounded-md border border-${color}-200 dark:border-${color}-800 bg-${color}-50 dark:bg-${color}-950/20 p-3`}>
-                          <p className={`text-xs font-semibold text-${color}-700 dark:text-${color}-400`}>{label}</p>
-                          <p className={`text-lg font-bold text-${color}-800 dark:text-${color}-300 mt-0.5`}>{value}</p>
-                          <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{reason}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-md border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3">
-                        <p className="text-xs font-semibold text-green-700 dark:text-green-400">L-Diversity</p>
-                        <p className="text-lg font-bold text-green-800 dark:text-green-300 mt-0.5">l = {autoAssist.suggestedParams.l}</p>
-                        {Object.values(autoAssist.paramDetails.l)[0] && (
-                          <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{Object.values(autoAssist.paramDetails.l)[0].reason}</p>
-                        )}
+                {/* Suggested Parameters */}
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 mb-1" style={poppins}>Auto-Suggested Privacy Parameters</p>
+                  <p className="text-xs text-slate-400 mb-3" style={poppins}>Based on your data's equivalence class structure</p>
+                  <div className="grid grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-white">
+                    {[
+                      { label: "K-Anonymity", value: `k = ${autoAssist.suggestedParams.k}` },
+                      { label: "L-Diversity", value: `l = ${autoAssist.suggestedParams.l}` },
+                      { label: "T-Closeness", value: `t = ${autoAssist.suggestedParams.t.toFixed(2)}` },
+                      { label: "Sample Size", value: `${autoAssist.suggestedParams.samplePct}%` },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="px-5 py-4">
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>{label}</p>
+                        <p className="text-xl font-semibold text-slate-800 mt-1" style={poppins}>{value}</p>
                       </div>
-                      <div className="rounded-md border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/20 p-3">
-                        <p className="text-xs font-semibold text-teal-700 dark:text-teal-400">T-Closeness</p>
-                        <p className="text-lg font-bold text-teal-800 dark:text-teal-300 mt-0.5">t = {autoAssist.suggestedParams.t.toFixed(2)}</p>
-                        {Object.values(autoAssist.paramDetails.t)[0] && (
-                          <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{Object.values(autoAssist.paramDetails.t)[0].reason}</p>
-                        )}
-                      </div>
-                    </div>
-                    <Button className="w-full" variant="outline" onClick={applyAutoSuggestions}>
-                      ← Use Suggested Values
-                    </Button>
-                  </CardContent>
-                </Card>
+                    ))}
+                  </div>
+                  <button onClick={applyAutoSuggestions} className="mt-3 w-full h-8 rounded-xl border border-slate-200 text-xs text-slate-600 hover:border-blue-300 hover:text-blue-600 transition-colors font-medium" style={poppins}>
+                    ← Use Suggested Values
+                  </button>
+                </div>
               </div>
             ) : (
-            <Card className="flex flex-col items-center justify-center py-24 text-center">
-              <Network className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No Assessment Results Yet</h3>
-              <p className="text-sm text-muted-foreground max-w-sm">
-                Select a dataset, configure quasi-identifiers and sensitive attributes, then click <strong>Run Assessment</strong> to analyse privacy risks across all 10 attack types.
-              </p>
-            </Card>
+              /* Empty state */
+              <div className="flex flex-col items-center justify-center py-32 text-center">
+                <Network className="h-10 w-10 text-slate-200 mb-4" />
+                <p className="text-slate-700 font-semibold mb-1" style={poppins}>No Assessment Results Yet</p>
+                <p className="text-sm text-slate-400 max-w-sm leading-relaxed" style={poppins}>
+                  Select a dataset, configure quasi-identifiers and sensitive attributes, then click <strong>Run Assessment</strong> to analyse privacy risks across all 10 attack types.
+                </p>
+              </div>
             )
           ) : (
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="flex flex-wrap h-auto gap-1 mb-4">
-                {ATTACKS.filter((a) => selectedAttacks.includes(a.id)).map((a) => {
-                  const r = results[a.id];
-                  return (
-                    <TabsTrigger key={a.id} value={a.id} className="flex items-center gap-1.5 text-xs px-3 py-1.5">
-                      {a.icon}
-                      {a.short}
-                      {r && <span className="ml-1" style={{ color: RISK_COLORS[r.riskLevel] }}>●</span>}
-                    </TabsTrigger>
-                  );
-                })}
-                {results.composite && (
-                  <TabsTrigger value="comparison" className="flex items-center gap-1.5 text-xs px-3 py-1.5">
-                    <BarChart3 className="h-3 w-3" /> Comparison
-                    <span className="ml-1 font-bold" style={{ color: RISK_COLORS[results.composite.riskLevel] }}>{results.composite.score}</span>
-                  </TabsTrigger>
-                )}
-              </TabsList>
+            /* Results Summary — attack list with "View Report →" buttons */
+            <div className="space-y-6">
+              {/* Composite Score Row */}
+              {results.composite && (
+                <div className="grid grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-white">
+                  {[
+                    { label: "Composite Score", value: `${results.composite.score}/100` },
+                    { label: "Risk Level", value: results.composite.riskLevel },
+                    { label: "Dataset", value: selectedDatasetObj?.originalName ?? "—" },
+                    { label: "Attacks Run", value: `${ATTACKS.filter(a => selectedAttacks.includes(a.id)).length} / 10` },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="px-5 py-4">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>{label}</p>
+                      <p className="text-xl font-semibold text-slate-800 mt-1 truncate" style={poppins}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              {/* Per-attack description banner */}
-              {ATTACKS.filter((a) => selectedAttacks.includes(a.id)).map((a) => (
-                <TabsContent key={a.id} value={a.id} className="space-y-4">
-                  <Card className="bg-muted/40 border-0">
-                    <CardContent className="flex items-start gap-3 py-3">
-                      <div className="mt-0.5">{a.icon}</div>
-                      <div>
-                        <div className="font-semibold text-sm">{a.label}</div>
-                        <div className="text-xs text-muted-foreground">{a.description}</div>
-                      </div>
-                      {results[a.id] && <div className="ml-auto">{riskBadge(results[a.id]!.riskLevel)}</div>}
-                    </CardContent>
-                  </Card>
-                  {results[a.id] ? (
-                    <>
-                      {a.id === "prosecutor"          && <ProsecutorReport r={results.prosecutor!} kThreshold={kThreshold[0]} />}
-                      {a.id === "journalist"          && <JournalistReport r={results.journalist!} kThreshold={kThreshold[0]} />}
-                      {a.id === "marketer"            && <MarketerReport r={results.marketer!} />}
-                      {a.id === "singlingOut"         && <SinglingOutReport r={results.singlingOut!} />}
-                      {a.id === "inference"           && <InferenceReport r={results.inference!} />}
-                      {a.id === "membership"          && <MembershipReport r={results.membership!} />}
-                      {a.id === "recordLinkage"       && <RecordLinkageReport r={results.recordLinkage!} kThreshold={kThreshold[0]} />}
-                      {a.id === "attributeDisclosure" && <AttributeDisclosureReport r={results.attributeDisclosure!} />}
-                      {a.id === "differencing"        && <DifferencingReport r={results.differencing!} />}
-                      {a.id === "modelInversion"      && <ModelInversionReport r={results.modelInversion!} kVal={kThreshold[0]} lVal={lThreshold[0]} tVal={tThreshold[0] / 100} />}
-                    </>
-                  ) : (
-                    <Card className="flex items-center justify-center py-12 text-muted-foreground text-sm">
-                      <Loader2 className="h-5 w-5 animate-spin mr-2" /> Running {a.label}...
-                    </Card>
-                  )}
-                </TabsContent>
-              ))}
-
-              <TabsContent value="comparison">
-                <ComparisonDashboard results={results} />
-              </TabsContent>
-            </Tabs>
+              {/* Attack Results Table */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3" style={poppins}>Attack Results</p>
+                <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white">
+                  <table className="w-full" style={poppins}>
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50">
+                        <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Attack</th>
+                        <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Description</th>
+                        <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Risk Level</th>
+                        <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider" style={poppins}>Report</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {ATTACKS.filter((a) => selectedAttacks.includes(a.id)).map((a) => {
+                        const r = results[a.id];
+                        return (
+                          <tr key={a.id} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="px-5 py-3.5">
+                              <span className="text-sm font-semibold text-slate-800" style={poppins}>{a.short}</span>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <span className="text-xs text-slate-500 line-clamp-1" style={poppins}>{a.description}</span>
+                            </td>
+                            <td className="px-5 py-3.5 text-center">
+                              {r ? riskBadge(r.riskLevel) : <Loader2 className="h-4 w-4 animate-spin text-slate-400 mx-auto" />}
+                            </td>
+                            <td className="px-5 py-3.5 text-right">
+                              {r ? (
+                                <button
+                                  onClick={() => setViewReport(a.id)}
+                                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 ml-auto transition-colors"
+                                  style={poppins}
+                                >
+                                  View Report <ExternalLink className="h-3 w-3" />
+                                </button>
+                              ) : (
+                                <span className="text-xs text-slate-300" style={poppins}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {results.composite && (
+                        <tr className="hover:bg-slate-50/60 transition-colors bg-slate-50/40">
+                          <td className="px-5 py-3.5">
+                            <span className="text-sm font-semibold text-slate-800" style={poppins}>Comparison</span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="text-xs text-slate-500" style={poppins}>Composite weighted risk score across all attacks</span>
+                          </td>
+                          <td className="px-5 py-3.5 text-center">
+                            <span className="text-sm font-bold" style={{ ...poppins, color: RISK_COLORS[results.composite.riskLevel] }}>{results.composite.score}/100</span>
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <button
+                              onClick={() => setViewReport("comparison")}
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 ml-auto transition-colors"
+                              style={poppins}
+                            >
+                              View Report <ExternalLink className="h-3 w-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
