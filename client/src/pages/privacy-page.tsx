@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import {
   Shield, Lock, Database, Shuffle, Sparkles, Play, Loader2,
   CheckCircle, Download, Info, Network, Key, Server,
-  GitMerge, BarChart3, ChevronRight, AlertTriangle, Zap,
+  GitMerge, BarChart3, ChevronRight, AlertTriangle, Zap, ArrowLeft,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Dataset, PrivacyOperation } from "@shared/schema";
@@ -1152,1558 +1152,1094 @@ export default function PrivacyPage() {
     }
   }, [family, sdcTech, dpTech, sdgTech, cryptoTech, fedTech, rawData, quasiIdentifiers, sensitiveAttr, targetCols, filteredTargetCols, allCols, numericCols, kVal, suppLimit, lVal, lMethod, lKBase, cRecursive, tVal, tKBase, swapFrac, microK, microDist, pramRetention, pramVariant, topPct, botPct, addNoise, noiseLevel, noiseDist, noiseLambda, noiseClip, suppMode, suppCriterion, suppBudget, suppMinGroup, suppZThreshold, suppSACol, suppRiskVals, suppLower, suppUpper, suppMinCellFreq, genColConfigs, shuffleVariant, shuffleGroupCol, shuffleRankDelta, csRowCol, csColCol, csValCol, csAggregate, csNMin, csPPct, csKDom, csSecondary, epsilon, delta, dpProtectCategorical, synthSize, preserveCorr, synthBandwidthRule, synthSeedEnabled, synthSeed, dpSgdClip, dpSgdEpochs, dpSgdBatchSize, heKeySize, smpcShares, smpcThreshold, fedNodes, fedRounds, fedDP, fedEps, fedGenSynth, fedLocalEpochs, fedLocalLR, fedBatchSize, fedPartition, fedDelta, fedClipNorm, fedSynthSize, fedSeed, selectedDataset, toast]);
 
+
+  const poppins = { fontFamily: "'Poppins', sans-serif" };
+
+  // ── Full-screen result view ─────────────────────────────────────────────────
+  if (result) {
+    return (
+      <DashboardLayout fullHeight title="Privacy Enhancement" breadcrumbs={[{ label: "Privacy Enhancement" }]}>
+        <div style={poppins} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="shrink-0 flex items-center gap-3 border-b border-slate-200 dark:border-slate-700 px-6 py-3 bg-white dark:bg-slate-900">
+            <button
+              onClick={() => setResult(null)}
+              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+              data-testid="button-back-to-config"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back to Configuration
+            </button>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{result.technique}</span>
+          </div>
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            <ResultCard result={result} />
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout title="Privacy Enhancement" breadcrumbs={[{ label: "Privacy Enhancement" }]}>
-      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+      <div style={poppins} className="flex min-h-[calc(100vh-120px)] -mx-6 -mt-2">
+
         {/* ── LEFT PANEL ──────────────────────────────────────────────────── */}
-        <div className="space-y-4">
-          {/* Dataset selector */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Dataset</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Select value={selectedDataset} onValueChange={handleDatasetChange}>
-                <SelectTrigger data-testid="select-dataset-privacy">
-                  <SelectValue placeholder="Choose a dataset…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {datasets?.map((d) => (
-                    <SelectItem key={d.id} value={d.id.toString()}>{d.originalName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedDS && (
-                <div className="flex gap-2 text-xs text-muted-foreground flex-wrap">
-                  <Badge variant="outline">{selectedDS.rowCount} rows</Badge>
-                  <Badge variant="outline">{allCols.length} cols</Badge>
-                  {rawData.length === 0 && <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</span>}
+        <div className="w-[300px] shrink-0 border-r border-slate-200 dark:border-slate-700 flex flex-col overflow-y-auto">
+
+          {/* Dataset */}
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Dataset</p>
+            <Select value={selectedDataset} onValueChange={handleDatasetChange}>
+              <SelectTrigger data-testid="select-dataset-privacy">
+                <SelectValue placeholder="Choose a dataset…" />
+              </SelectTrigger>
+              <SelectContent>
+                {datasets?.map((d) => (
+                  <SelectItem key={d.id} value={d.id.toString()}>{d.originalName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedDS && (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <Badge variant="outline" className="text-[11px]">{selectedDS.rowCount} rows</Badge>
+                <Badge variant="outline" className="text-[11px]">{allCols.length} cols</Badge>
+                {rawData.length === 0 && <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</span>}
+              </div>
+            )}
+          </div>
+
+          {/* Privacy Family */}
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Privacy Family</p>
+            <div className="space-y-0.5">
+              {FAMILIES.map((f) => (
+                <div
+                  key={f.id}
+                  onClick={() => { setFamily(f.id); setResult(null); }}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                    family === f.id
+                      ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300"
+                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  }`}
+                  data-testid={`family-tab-${f.id}`}
+                >
+                  <f.icon className={`h-4 w-4 shrink-0 ${family === f.id ? "text-blue-600 dark:text-blue-400" : f.color}`} />
+                  <span className="text-xs font-medium leading-snug">{f.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Column Configuration — SDC family */}
+          {selectedDS && family === "sdc" && (
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Column Configuration</p>
+              {autoAssistMsg && (
+                <div className="flex items-start gap-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 mb-3">
+                  <Zap className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">{autoAssistMsg}</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
 
-          {/* Column configuration — dynamic per technique */}
-          {selectedDS && family === "sdc" && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Column Configuration</CardTitle>
-                {autoAssistMsg && (
-                  <div className="flex items-start gap-2 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 mt-2">
-                    <Zap className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">{autoAssistMsg}</p>
+              {showQI && (
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold uppercase tracking-wide">Quasi-Identifiers (QI)</Label>
+                    <button className="text-xs text-muted-foreground hover:text-foreground underline" onClick={() => setQuasiIdentifiers([])} data-testid="button-uncheck-all-qi">Uncheck All</button>
                   </div>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* ── QI Checkboxes — only for k-anon, l-div, t-close, or uniqueness suppression */}
-                {showQI && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold uppercase tracking-wide">Quasi-Identifiers (QI)</Label>
-                      <button
-                        className="text-xs text-muted-foreground hover:text-foreground underline"
-                        onClick={() => setQuasiIdentifiers([])}
-                        data-testid="button-uncheck-all-qi"
-                      >Uncheck All</button>
+                  <p className="text-xs text-muted-foreground">Auto-selected from column profiles.</p>
+                  <ScrollArea className="h-[140px] rounded-md border p-2">
+                    <div className="space-y-1">
+                      {allCols.map((col) => {
+                        const profile = colProfiles[col];
+                        const cls = profile?.classification ?? "QUASI_ID";
+                        const badge = cls === "DIRECT_ID" ? "🔴" : cls === "SENSITIVE" ? "🔵" : cls === "IGNORE" ? "⚪" : "🟡";
+                        return (
+                          <div key={col} className="flex items-center gap-2 py-0.5">
+                            <Checkbox id={`qi-${col}`} checked={quasiIdentifiers.includes(col)} onCheckedChange={() => toggleQI(col)} data-testid={`checkbox-qi-${col}`} />
+                            <label htmlFor={`qi-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
+                            <span className="text-xs shrink-0" title={cls}>{badge}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="text-xs text-muted-foreground">Auto-selected from column profiles. Adjust as needed.</p>
-                    <ScrollArea className="h-[140px] rounded-md border p-2">
-                      <div className="space-y-1">
-                        {allCols.map((col) => {
-                          const profile = colProfiles[col];
-                          const cls = profile?.classification ?? "QUASI_ID";
-                          const badge = cls === "DIRECT_ID" ? "🔴" : cls === "SENSITIVE" ? "🔵" : cls === "IGNORE" ? "⚪" : "🟡";
-                          return (
-                            <div key={col} className="flex items-center gap-2 py-0.5">
-                              <Checkbox
-                                id={`qi-${col}`}
-                                checked={quasiIdentifiers.includes(col)}
-                                onCheckedChange={() => toggleQI(col)}
-                                data-testid={`checkbox-qi-${col}`}
-                              />
-                              <label htmlFor={`qi-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
-                              <span className="text-xs shrink-0" title={cls}>{badge}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </ScrollArea>
-                    <p className="text-[10px] text-muted-foreground">🔴 Direct-ID  🟡 QI  🔵 Sensitive  ⚪ Ignore</p>
-                  </div>
-                )}
+                  </ScrollArea>
+                  <p className="text-[10px] text-muted-foreground">🔴 Direct-ID  🟡 QI  🔵 Sensitive  ⚪ Ignore</p>
+                </div>
+              )}
 
-                {/* ── SA Dropdown — only for l-div, t-close, or sensitive_value suppression */}
-                {showSA && (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-semibold uppercase tracking-wide">Sensitive Attribute (SA)</Label>
-                    <p className="text-xs text-muted-foreground">Auto-selected highest-entropy sensitive column.</p>
-                    <Select value={sensitiveAttr} onValueChange={setSensitiveAttr}>
-                      <SelectTrigger data-testid="select-sa-col">
-                        <SelectValue placeholder="Select attribute…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allCols.map((col) => (
-                          <SelectItem key={col} value={col}>
-                            {col}
-                            {colProfiles[col]?.classification === "SENSITIVE" ? " 🔵" : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {sensitiveAttr && colProfiles[sensitiveAttr] && (
-                      <p className="text-xs text-muted-foreground">
-                        {colProfiles[sensitiveAttr].uniqueCount} unique values · entropy {colProfiles[sensitiveAttr].entropy.toFixed(2)} bits
-                      </p>
-                    )}
-                  </div>
-                )}
+              {showSA && (
+                <div className="space-y-2 mb-4">
+                  <Label className="text-xs font-semibold uppercase tracking-wide">Sensitive Attribute (SA)</Label>
+                  <p className="text-xs text-muted-foreground">Auto-selected highest-entropy sensitive column.</p>
+                  <Select value={sensitiveAttr} onValueChange={setSensitiveAttr}>
+                    <SelectTrigger data-testid="select-sa-col"><SelectValue placeholder="Select attribute…" /></SelectTrigger>
+                    <SelectContent>
+                      {allCols.map((col) => (
+                        <SelectItem key={col} value={col}>{col}{colProfiles[col]?.classification === "SENSITIVE" ? " 🔵" : ""}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {sensitiveAttr && colProfiles[sensitiveAttr] && (
+                    <p className="text-xs text-muted-foreground">{colProfiles[sensitiveAttr].uniqueCount} unique values · entropy {colProfiles[sensitiveAttr].entropy.toFixed(2)} bits</p>
+                  )}
+                </div>
+              )}
 
-                {/* ── Sensitive Attr for explicit suppression sensitive_value criterion */}
-                {family === "sdc" && sdcTech === "explicit-suppression" && suppCriterion === "sensitive_value" && !showSA && (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-semibold uppercase tracking-wide">Sensitive Attribute Column</Label>
-                    <Select value={suppSACol} onValueChange={setSuppSACol}>
-                      <SelectTrigger data-testid="select-supp-sa-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
-                      <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                )}
+              {family === "sdc" && sdcTech === "explicit-suppression" && suppCriterion === "sensitive_value" && !showSA && (
+                <div className="space-y-2 mb-4">
+                  <Label className="text-xs font-semibold uppercase tracking-wide">Sensitive Attribute Column</Label>
+                  <Select value={suppSACol} onValueChange={setSuppSACol}>
+                    <SelectTrigger data-testid="select-supp-sa-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                    <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              )}
 
-                {/* ── Target Columns (SDC techniques with TC requirement) */}
-                {showTC_SDC && filteredTargetCols.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold uppercase tracking-wide">
-                        Target Columns
-                        {tcfg.tcFilter === "numeric" && <span className="ml-1 font-normal text-muted-foreground">(numeric)</span>}
-                        {tcfg.tcFilter === "categorical" && <span className="ml-1 font-normal text-muted-foreground">(categorical)</span>}
-                      </Label>
-                      <button
-                        className="text-xs text-muted-foreground hover:text-foreground underline"
-                        onClick={() => setTargetCols([])}
-                        data-testid="button-uncheck-all-tc"
-                      >All</button>
+              {showTC_SDC && filteredTargetCols.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold uppercase tracking-wide">
+                      Target Columns
+                      {tcfg.tcFilter === "numeric" && <span className="ml-1 font-normal text-muted-foreground">(numeric)</span>}
+                      {tcfg.tcFilter === "categorical" && <span className="ml-1 font-normal text-muted-foreground">(categorical)</span>}
+                    </Label>
+                    <button className="text-xs text-muted-foreground hover:text-foreground underline" onClick={() => setTargetCols([])} data-testid="button-uncheck-all-tc">All</button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">All = none checked (applies to all eligible).</p>
+                  <ScrollArea className="h-[140px] rounded-md border p-2">
+                    <div className="space-y-1">
+                      {filteredTargetCols.map((col) => {
+                        const profile = colProfiles[col];
+                        return (
+                          <div key={col} className="flex items-center gap-2 py-0.5">
+                            <Checkbox id={`tgt-${col}`} checked={targetCols.includes(col)} onCheckedChange={() => toggleTarget(col)} data-testid={`checkbox-target-${col}`} />
+                            <label htmlFor={`tgt-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
+                            {profile && <span className="text-[10px] text-muted-foreground shrink-0">{profile.uniqueCount}u</span>}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="text-xs text-muted-foreground">Auto-selected. All = none checked (applies to all eligible columns).</p>
-                    <ScrollArea className="h-[140px] rounded-md border p-2">
-                      <div className="space-y-1">
-                        {filteredTargetCols.map((col) => {
-                          const profile = colProfiles[col];
-                          return (
-                            <div key={col} className="flex items-center gap-2 py-0.5">
-                              <Checkbox
-                                id={`tgt-${col}`}
-                                checked={targetCols.includes(col)}
-                                onCheckedChange={() => toggleTarget(col)}
-                                data-testid={`checkbox-target-${col}`}
-                              />
-                              <label htmlFor={`tgt-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
-                              {profile && (
-                                <span className="text-[10px] text-muted-foreground shrink-0">{profile.uniqueCount}u</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                )}
+                  </ScrollArea>
+                </div>
+              )}
 
-                {/* ── Data Shuffling — Group Column (when within_group) */}
-                {family === "sdc" && sdcTech === "data-shuffling" && shuffleVariant === "within_group" && (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-semibold uppercase tracking-wide">Group Column</Label>
-                    <Select value={shuffleGroupCol} onValueChange={setShuffleGroupCol}>
-                      <SelectTrigger data-testid="select-shuffle-group-col"><SelectValue placeholder="Select grouping column…" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">None (full shuffle)</SelectItem>
-                        {categoricalCols.map((c) => <SelectItem key={c} value={c}>{c} ({colProfiles[c]?.uniqueCount}u)</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">Shuffles values only within each group, preserving group structure.</p>
-                  </div>
-                )}
+              {family === "sdc" && sdcTech === "data-shuffling" && shuffleVariant === "within_group" && (
+                <div className="space-y-2 mb-4">
+                  <Label className="text-xs font-semibold uppercase tracking-wide">Group Column</Label>
+                  <Select value={shuffleGroupCol} onValueChange={setShuffleGroupCol}>
+                    <SelectTrigger data-testid="select-shuffle-group-col"><SelectValue placeholder="Select grouping column…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None (full shuffle)</SelectItem>
+                      {categoricalCols.map((c) => <SelectItem key={c} value={c}>{c} ({colProfiles[c]?.uniqueCount}u)</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-                {/* Hint for techniques with no left-panel inputs */}
-                {!showQI && !showSA && !showTC_SDC && sdcTech !== "data-shuffling" && sdcTech !== "generalisation" && sdcTech !== "cell-suppression" && (
-                  <p className="text-xs text-muted-foreground italic">Configure parameters on the right →</p>
-                )}
-                {sdcTech === "generalisation" && (
-                  <p className="text-xs text-muted-foreground italic">Generalisation is configured per-column on the right panel →</p>
-                )}
-                {sdcTech === "cell-suppression" && (
-                  <p className="text-xs text-muted-foreground italic">Cell Suppression builds a statistical table. Select Row / Column / Value variables on the right →</p>
-                )}
-              </CardContent>
-            </Card>
+              {!showQI && !showSA && !showTC_SDC && sdcTech !== "data-shuffling" && sdcTech !== "generalisation" && sdcTech !== "cell-suppression" && (
+                <p className="text-xs text-muted-foreground italic">Configure parameters on the right →</p>
+              )}
+              {sdcTech === "generalisation" && (
+                <p className="text-xs text-muted-foreground italic">Generalisation is configured per-column on the right →</p>
+              )}
+              {sdcTech === "cell-suppression" && (
+                <p className="text-xs text-muted-foreground italic">Select Row / Column / Value variables on the right →</p>
+              )}
+            </div>
           )}
 
-          {/* Column config for crypto family — Columns to Encrypt / Share (numeric only) */}
+          {/* Column config — Crypto family */}
           {selectedDS && family === "crypto" && showTC_other && (
-            <Card className="border-amber-200 dark:border-amber-800">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Key className="h-3.5 w-3.5" />
-                  Columns to Encrypt / Share
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {cryptoTech === "he" ? "Paillier HE" : "Shamir SMPC"} operates on numeric columns only.
-                  All = none selected (applies to all numeric columns).
-                </p>
-                <ScrollArea className="h-[140px] rounded-md border p-2">
-                  <div className="space-y-1">
-                    {numericCols.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic px-1">No numeric columns detected. Load a dataset first.</p>
-                    ) : numericCols.map((col) => (
-                      <div key={col} className="flex items-center gap-2 py-0.5">
-                        <Checkbox
-                          id={`tgt2-${col}`}
-                          checked={targetCols.includes(col)}
-                          onCheckedChange={() => toggleTarget(col)}
-                          data-testid={`checkbox-target2-${col}`}
-                        />
-                        <label htmlFor={`tgt2-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
-                        <span className="text-[10px] text-muted-foreground shrink-0">{colProfiles[col]?.uniqueCount}u</span>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Columns to Encrypt / Share</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                {cryptoTech === "he" ? "Paillier HE" : "Shamir SMPC"} operates on numeric columns only. All = none selected.
+              </p>
+              <ScrollArea className="h-[140px] rounded-md border p-2">
+                <div className="space-y-1">
+                  {numericCols.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic px-1">No numeric columns detected.</p>
+                  ) : numericCols.map((col) => (
+                    <div key={col} className="flex items-center gap-2 py-0.5">
+                      <Checkbox id={`tgt2-${col}`} checked={targetCols.includes(col)} onCheckedChange={() => toggleTarget(col)} data-testid={`checkbox-target2-${col}`} />
+                      <label htmlFor={`tgt2-${col}`} className="text-xs cursor-pointer flex-1 truncate">{col}</label>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{colProfiles[col]?.uniqueCount}u</span>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
           )}
 
-          {/* Recent operations history */}
+          {/* Recent operations */}
           {operations && operations.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Server className="h-4 w-4 text-muted-foreground" />
-                  Recent Operations
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 p-3">
+            <div className="px-5 py-4">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Recent Operations</p>
+              <div className="space-y-1.5">
                 {operations.slice(0, 5).map((op) => (
-                  <div key={op.id} className="flex items-start justify-between rounded-md border px-2.5 py-2 text-xs gap-2">
+                  <div key={op.id} className="flex items-start justify-between rounded-lg border border-slate-100 dark:border-slate-800 px-3 py-2 text-xs gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{op.technique}</p>
-                      <p className="text-muted-foreground truncate">
+                      <p className="text-muted-foreground truncate text-[10px]">
                         {op.createdAt ? new Date(op.createdAt).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" }) : ""}
                       </p>
                     </div>
-                    <div className="text-right shrink-0">
-                      <Badge variant="outline" className={`text-[10px] py-0 ${(op.informationLoss ?? 0) > 0.3 ? "border-rose-400 text-rose-600" : (op.informationLoss ?? 0) > 0.05 ? "border-amber-400 text-amber-600" : "border-emerald-400 text-emerald-600"}`}>
-                        {((op.informationLoss ?? 0) * 100).toFixed(1)}% loss
-                      </Badge>
-                      {op.recordsSuppressed != null && op.recordsSuppressed > 0 && (
-                        <p className="text-muted-foreground mt-0.5">{op.recordsSuppressed} suppressed</p>
-                      )}
-                    </div>
+                    <Badge variant="outline" className={`text-[10px] py-0 shrink-0 ${(op.informationLoss ?? 0) > 0.3 ? "border-rose-400 text-rose-600" : (op.informationLoss ?? 0) > 0.05 ? "border-amber-400 text-amber-600" : "border-emerald-400 text-emerald-600"}`}>
+                      {((op.informationLoss ?? 0) * 100).toFixed(1)}% loss
+                    </Badge>
                   </div>
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
         </div>
 
-        {/* ── RIGHT PANEL ─────────────────────────────────────────────────── */}
-        <div className="space-y-4 min-w-0 overflow-hidden">
-          <Tabs value={family} onValueChange={(v) => { setFamily(v as FamilyId); setResult(null); }}>
-            <TabsList className="w-full h-auto flex flex-wrap gap-1 p-1">
-              {FAMILIES.map((f) => (
-                <TabsTrigger key={f.id} value={f.id} className="flex items-center gap-1.5 text-xs" data-testid={`family-tab-${f.id}`}>
-                  <f.icon className={`h-3.5 w-3.5 ${f.color}`} />
-                  <span className="hidden sm:inline">{f.label}</span>
-                  <span className="sm:hidden">{f.label.split(" ")[0]}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
+        {/* ── RIGHT PANEL ──────────────────────────────────────────────────── */}
+        <div className="flex-1 min-w-0 overflow-y-auto px-6 py-5">
 
-            {/* ══ FAMILY 1: SDC ══════════════════════════════════════════════ */}
-            <TabsContent value="sdc" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Technique</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <TechList items={SDC_TECHNIQUES} selected={sdcTech} onSelect={(id) => {
-                      setSdcTech(id); setResult(null);
-                      setTargetCols([]); setQuasiIdentifiers([]); setSensitiveAttr("");
-                      autoAssistDoneRef.current = "";
-                    }} />
-                  </CardContent>
-                </Card>
-
-                <div className="space-y-4 min-w-0 overflow-hidden">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Shield className="h-4 w-4 text-blue-500" />
-                        {SDC_TECHNIQUES.find((t) => t.id === sdcTech)?.label} Parameters
-                      </CardTitle>
-                      <CardDescription>{SDC_TECHNIQUES.find((t) => t.id === sdcTech)?.subtitle}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <FormulaBox id={sdcTech} />
-
-                      {/* ── K-Anonymity ── */}
-                      {sdcTech === "k-anonymity" && (<>
-                        <SliderField label="K Value" value={kVal} onChange={setKVal} min={2} max={25} step={1} format={(v) => String(v)}
-                          helpText={`Each record hidden in a group of ≥ ${kVal[0]} identical QI tuples`}
-                          suggested={autoSuggestions.k ? `Suggested ${autoSuggestions.k}` : undefined} />
-                        <SliderField label="Suppression Limit" value={suppLimit} onChange={setSuppLimit} min={0} max={30} step={1} format={(v) => `${v}%`}
-                          helpText="Maximum % of records to delete if they cannot form a group of size k"
-                          suggested={autoSuggestions.suppLimit !== undefined ? `Suggested ${autoSuggestions.suppLimit}%` : undefined} />
-                        <div className="space-y-2">
-                          <Label className="text-sm">Generalisation Method</Label>
-                          <RadioGroup value={genMethod} onValueChange={(v) => setGenMethod(v as "midpoint" | "range")} className="flex gap-4">
-                            {[["midpoint","Midpoint"],["range","Range"]].map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`gm-${v}`} data-testid={`radio-genmethod-${v}`} />
-                                <label htmlFor={`gm-${v}`} className="text-xs cursor-pointer">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          <p className="text-xs text-muted-foreground">
-                            {genMethod === "midpoint"
-                              ? "Numeric → (min+max)/2 · Categorical → most common value per partition"
-                              : "Numeric → [min–max] interval · Categorical → {all distinct values}"}
-                          </p>
-                        </div>
-                      </>)}
-
-                      {/* ── L-Diversity ── */}
-                      {sdcTech === "l-diversity" && (<>
-                        <SliderField label="L Value" value={lVal} onChange={setLVal} min={2} max={10} step={1} format={(v) => String(v)}
-                          helpText={`Each equivalence class must have ≥ ${lVal[0]} well-represented sensitive values`}
-                          suggested={autoSuggestions.l ? `Suggested ${autoSuggestions.l}` : undefined} />
-                        <SliderField label="Underlying K" value={lKBase} onChange={setLKBase} min={2} max={15} step={1} format={(v) => String(v)}
-                          helpText="K-Anonymity base applied before checking l-diversity"
-                          suggested={autoSuggestions.k ? `Suggested ${autoSuggestions.k}` : undefined} />
-                        <div className="space-y-2">
-                          <Label className="text-sm">Variant</Label>
-                          <RadioGroup value={lMethod} onValueChange={(v) => setLMethod(v as typeof lMethod)} className="space-y-1">
-                            {([["entropy","Entropy  −Σ p·log(p) ≥ log(l)"],["distinct","Distinct  |S_vals| ≥ l"],["recursive","Recursive  (c,l)-diversity"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`lm-${v}`} />
-                                <label htmlFor={`lm-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          {autoSuggestions.lVariant && (
-                            <p className="text-xs text-blue-600 dark:text-blue-400">⚡ Suggested variant: {autoSuggestions.lVariant}</p>
-                          )}
-                        </div>
-                        {lMethod === "recursive" && (
-                          <SliderField label="c (Recursive)" value={cRecursive} onChange={setCRecursive} min={0.1} max={1} step={0.05} format={(v) => v.toFixed(2)} helpText="r₁ < c × (r₂ + r₃ + …). Smaller c = stricter constraint." />
-                        )}
-                      </>)}
-
-                      {/* ── T-Closeness ── */}
-                      {sdcTech === "t-closeness" && (<>
-                        <SliderField label="T Threshold" value={tVal} onChange={setTVal} min={0.05} max={1} step={0.05} format={(v) => v.toFixed(2)}
-                          helpText="Lower = stricter. 0.20 = standard. 0.50 = lenient."
-                          suggested={autoSuggestions.t ? `Suggested ${autoSuggestions.t}` : undefined} />
-                        <div className="space-y-2">
-                          <Label className="text-sm">Distance Metric</Label>
-                          {/* Issue 9: wired to tDistMetric state and passed to applyTCloseness */}
-                          <RadioGroup value={tDistMetric} onValueChange={(v) => setTDistMetric(v as "emd" | "tvd")} className="flex gap-4">
-                            {([["emd","EMD (Earth Mover's)"],["tvd","TVD (Total Variation)"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`dm-${v}`} />
-                                <label htmlFor={`dm-${v}`} className="text-xs cursor-pointer">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          {/* Issue 9: show note when SA is categorical — EMD≡TVD, toggle is inert */}
-                          {sensitiveAttr && !colProfiles[sensitiveAttr]?.isNum && (
-                            <p className="text-xs text-amber-600 dark:text-amber-400 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-1 leading-snug">
-                              ℹ️ <strong>SA "{sensitiveAttr}" is categorical</strong> — for unordered categories, EMD reduces to ½ × L1 = TVD. Both metrics give identical results here. To see EMD vs TVD diverge, choose a numeric/ordinal SA (e.g. Age, Income).
-                            </p>
-                          )}
-                          {sensitiveAttr && colProfiles[sensitiveAttr]?.isNum && tDistMetric === "emd" && (
-                            <p className="text-xs text-blue-600 dark:text-blue-400 leading-snug">
-                              EMD uses CDF-based distance (sensitive to value ordering).
-                            </p>
-                          )}
-                          {sensitiveAttr && colProfiles[sensitiveAttr]?.isNum && tDistMetric === "tvd" && (
-                            <p className="text-xs text-blue-600 dark:text-blue-400 leading-snug">
-                              TVD uses ½ × L1 (no CDF — ignores ordinal structure of numeric SA).
-                            </p>
-                          )}
-                        </div>
-                        <SliderField label="Underlying K" value={tKBase} onChange={setTKBase} min={2} max={15} step={1} format={(v) => String(v)}
-                          helpText="K-Anonymity base applied before checking t-closeness"
-                          suggested={autoSuggestions.k ? `Suggested ${autoSuggestions.k}` : undefined} />
-                      </>)}
-
-                      {/* ── Rank Swapping ── */}
-                      {sdcTech === "rank-swapping" && (<>
-                        <SliderField label="Swap Fraction" value={swapFrac} onChange={setSwapFrac} min={0.02} max={0.5} step={0.01} format={(v) => `${(v * 100).toFixed(0)}%`}
-                          helpText={`Max rank distance p = ${Math.round(swapFrac[0] * (rawData.length || 100))} records. Larger = more privacy, more distortion.`}
-                          suggested={autoSuggestions.swapFrac ? `Suggested ${(autoSuggestions.swapFrac * 100).toFixed(0)}%` : undefined} />
-                        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                          Max rank distance p = {Math.round(swapFrac[0] * (rawData.length || 100))} records
-                          · Marginal distributions preserved: ✅
-                        </div>
-                        <SeedInput value={swapSeed} onChange={setSwapSeed} />
-                      </>)}
-
-                      {/* ── Microaggregation ── */}
-                      {sdcTech === "microagg" && (<>
-                        <SliderField label="Cluster Size (k)" value={microK} onChange={setMicroK} min={2} max={20} step={1} format={(v) => String(v)}
-                          helpText="Minimum cluster size for MDAV. Each cluster's values are replaced with the centroid."
-                          suggested={autoSuggestions.microK ? `Suggested ${autoSuggestions.microK}` : undefined} />
-                        <div className="space-y-2">
-                          <Label className="text-sm">Distance Metric</Label>
-                          <RadioGroup value={microDist} onValueChange={(v) => setMicroDist(v as typeof microDist)} className="flex gap-4">
-                            {([["euclidean","Euclidean (L2)"],["manhattan","Manhattan (L1)"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`md-${v}`} />
-                                <label htmlFor={`md-${v}`} className="text-xs cursor-pointer">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                      </>)}
-
-                      {/* ── PRAM ── */}
-                      {sdcTech === "pram" && (<>
-                        <SliderField label="Retention Probability" value={pramRetention} onChange={setPramRetention} min={0.1} max={0.99} step={0.01} format={(v) => v.toFixed(2)}
-                          helpText={`P(keep original) = ${pramRetention[0].toFixed(2)}, P(perturb) = ${(1 - pramRetention[0]).toFixed(2)}`}
-                          suggested={autoSuggestions.pramRet ? `Suggested ${autoSuggestions.pramRet.toFixed(2)}` : undefined} />
-                        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                          P(keep original) = {pramRetention[0].toFixed(2)} · P(perturb) = {(1 - pramRetention[0]).toFixed(2)}
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-sm">PRAM Variant</Label>
-                          <RadioGroup value={pramVariant} onValueChange={(v) => setPramVariant(v as typeof pramVariant)} className="flex gap-4">
-                            {([["simple","Simple PRAM"],["unbiased","Unbiased PRAM"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`pv-${v}`} />
-                                <label htmlFor={`pv-${v}`} className="text-xs cursor-pointer">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          <p className="text-xs text-muted-foreground">Unbiased: post-processing correction to restore marginal distributions</p>
-                        </div>
-                        <SeedInput value={pramSeed} onChange={setPramSeed} />
-                      </>)}
-
-                      {/* ── Top/Bottom Coding ── */}
-                      {sdcTech === "topbottom" && (<>
-                        <SliderField label="Top Percentile Cap" value={topPct} onChange={setTopPct} min={80} max={99} step={1} format={(v) => `${v}th`} helpText="Values above this percentile are capped" />
-                        <SliderField label="Bottom Percentile Cap" value={botPct} onChange={setBotPct} min={1} max={20} step={1} format={(v) => `${v}th`} helpText="Values below this percentile are capped" />
-                        {botPct[0] >= topPct[0] && (
-                          <p className="text-xs text-rose-500">⚠ Bottom percentile must be less than top percentile.</p>
-                        )}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label className="text-sm">Add Gaussian Noise</Label>
-                            <p className="text-xs text-muted-foreground">Inject N(0, λ²σ²) noise after coding</p>
-                          </div>
-                          <Switch checked={addNoise} onCheckedChange={setAddNoise} />
-                        </div>
-                        {addNoise && (
-                          <SliderField label="Noise Level (λ)" value={noiseLevel} onChange={setNoiseLevel} min={0.01} max={0.5} step={0.01} format={(v) => v.toFixed(2)} helpText={`σ_noise = ${noiseLevel[0].toFixed(2)} × column_std`} />
-                        )}
-                      </>)}
-
-                      {/* ── Noise Addition ── */}
-                      {sdcTech === "noise-addition" && (<>
-                        <div className="space-y-2">
-                          <Label className="text-sm">Noise Distribution</Label>
-                          <RadioGroup value={noiseDist} onValueChange={(v) => setNoiseDist(v as typeof noiseDist)} className="space-y-1">
-                            {([["gaussian","Gaussian  N(0, σ²)  — smooth symmetric"],["laplace","Laplace  Lap(0, b)  — heavier tails, stronger DP"],["uniform","Uniform  U(−δ, +δ)  — bounded support"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`nd-${v}`} />
-                                <label htmlFor={`nd-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                        <SliderField label="Noise Multiplier (λ)" value={noiseLambda} onChange={setNoiseLambda} min={0.01} max={1.0} step={0.01} format={(v) => v.toFixed(2)}
-                          helpText={`σ_noise = λ × col_std. SNR = 1/λ² = ${(1 / noiseLambda[0] ** 2).toFixed(1)}. Lower λ = more utility.`}
-                          suggested={autoSuggestions.noiseLambda ? `Suggested ${autoSuggestions.noiseLambda.toFixed(2)}` : undefined} />
-                        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-0.5">
-                          <p>Estimated MAE ≈ {(0.798 * noiseLambda[0]).toFixed(3)} × σ_col (Gaussian)</p>
-                          <p>Compliance: Pearson r ≥ 0.85 and λ ≤ 0.5</p>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label className="text-sm">Clip to Column Range</Label>
-                            <p className="text-xs text-muted-foreground">Clamp noisy values to [min, max] of original</p>
-                          </div>
-                          <Switch checked={noiseClip} onCheckedChange={setNoiseClip} />
-                        </div>
-                        <SeedInput value={noiseSeed} onChange={setNoiseSeed} />
-                      </>)}
-
-                      {/* ── Explicit Suppression ── */}
-                      {sdcTech === "explicit-suppression" && (<>
-                        <div className="space-y-2">
-                          <Label className="text-sm">Suppression Mode</Label>
-                          <RadioGroup value={suppMode} onValueChange={(v) => setSuppMode(v as typeof suppMode)} className="flex gap-4">
-                            {([["row","Row"],["cell","Cell"],["both","Both"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`sm-${v}`} />
-                                <label htmlFor={`sm-${v}`} className="text-xs cursor-pointer">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-sm">Suppression Criterion</Label>
-                          <RadioGroup value={suppCriterion} onValueChange={(v) => setSuppCriterion(v as typeof suppCriterion)} className="space-y-1">
-                            {([
-                              ["uniqueness","Uniqueness  — suppress if QI group size < min"],
-                              ["outlier","Outlier  — suppress if |z-score| > threshold"],
-                              ["sensitive_value","Sensitive Value  — suppress if SA ∈ risk list"],
-                              ["threshold","Threshold  — suppress if value out of bounds"],
-                            ] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`sc-${v}`} />
-                                <label htmlFor={`sc-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          <p className="text-xs text-muted-foreground italic">Left panel updates based on criterion selected.</p>
-                        </div>
-                        <SliderField label="Suppression Budget" value={suppBudget} onChange={setSuppBudget} min={1} max={50} step={1} format={(v) => `${v}%`} helpText={`Max ${suppBudget[0]}% of records may be suppressed. Excess candidates are dropped.`} />
-                        {suppCriterion === "uniqueness" && (
-                          <SliderField label="Min Group Size" value={suppMinGroup} onChange={setSuppMinGroup} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Suppress records whose QI group has < ${suppMinGroup[0]} members`} />
-                        )}
-                        {suppCriterion === "outlier" && (
-                          <SliderField label="Z-Score Threshold" value={suppZThreshold} onChange={setSuppZThreshold} min={1.0} max={5.0} step={0.1} format={(v) => v.toFixed(1)} helpText={`Suppress records with |z| > ${suppZThreshold[0].toFixed(1)} in any target column`} />
-                        )}
-                        {suppCriterion === "sensitive_value" && (
-                          <div className="space-y-2">
-                            <Label className="text-sm">Risk Values (comma-separated)</Label>
-                            <input
-                              className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono"
-                              placeholder="e.g. HIV, Cancer, Fraud"
-                              value={suppRiskVals}
-                              onChange={(e) => setSuppRiskVals(e.target.value)}
-                              data-testid="input-risk-values"
-                            />
-                          </div>
-                        )}
-                        {suppCriterion === "threshold" && (
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Lower Bound</Label>
-                              <input className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono" type="number" placeholder="−∞" value={suppLower} onChange={(e) => setSuppLower(e.target.value)} data-testid="input-supp-lower" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Upper Bound</Label>
-                              <input className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono" type="number" placeholder="+∞" value={suppUpper} onChange={(e) => setSuppUpper(e.target.value)} data-testid="input-supp-upper" />
-                            </div>
-                          </div>
-                        )}
-                        {(suppMode === "cell" || suppMode === "both") && (
-                          <SliderField label="Min Cell Frequency" value={suppMinCellFreq} onChange={setSuppMinCellFreq} min={1} max={20} step={1} format={(v) => String(v)} helpText={`Cells with fewer than ${suppMinCellFreq[0]} occurrences are replaced with "***"`} />
-                        )}
-                      </>)}
-
-                      {/* ── Generalisation ── */}
-                      {sdcTech === "generalisation" && (<>
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-sm">Column Configurations</Label>
-                            <Badge variant="outline" className="text-xs">{genColConfigs.length} configured</Badge>
-                          </div>
-                          {genColConfigs.length === 0 && (
-                            <p className="text-xs text-muted-foreground italic">Add columns below to configure generalisation rules.</p>
-                          )}
-                          {genColConfigs.map((cfg, idx) => (
-                            <div key={idx} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-                              <div className="flex-1 min-w-0 text-xs">
-                                <span className="font-medium">{cfg.col}</span>
-                                <span className="text-muted-foreground ml-2">
-                                  {cfg.type === "bin"   ? `bin  bw=${cfg.binWidth ?? "auto"}` :
-                                   cfg.type === "round" ? `round  rt=${cfg.roundTo ?? 10}` :
-                                   `top-k  k=${cfg.topK ?? 10}`}
-                                </span>
-                              </div>
-                              <Button variant="ghost" size="sm" className="h-6 px-2 text-rose-500 hover:text-rose-700"
-                                onClick={() => setGenColConfigs((p) => p.filter((_, i) => i !== idx))}
-                                data-testid={`button-remove-gen-col-${idx}`}>✕</Button>
-                            </div>
-                          ))}
-                          <AddGenColRow
-                            allCols={allCols}
-                            existing={genColConfigs.map((c) => c.col)}
-                            onAdd={(cfg) => setGenColConfigs((p) => [...p, cfg])}
-                          />
-                        </div>
-                      </>)}
-
-                      {/* ── Data Shuffling ── */}
-                      {sdcTech === "data-shuffling" && (<>
-                        <div className="space-y-2">
-                          <Label className="text-sm">Shuffle Variant</Label>
-                          <RadioGroup value={shuffleVariant} onValueChange={(v) => setShuffleVariant(v as typeof shuffleVariant)} className="space-y-1">
-                            {([
-                              ["full","Full Shuffle  — completely random permutation"],
-                              ["within_group","Within-Group  — shuffle only within each group"],
-                              ["rank_preserving","Rank-Preserving  — limit displacement by δ × N"],
-                            ] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-2">
-                                <RadioGroupItem value={v} id={`sv-${v}`} />
-                                <label htmlFor={`sv-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                        {shuffleVariant === "rank_preserving" && (
-                          <SliderField label="Rank Delta (δ)" value={shuffleRankDelta} onChange={setShuffleRankDelta} min={0.01} max={0.5} step={0.01} format={(v) => v.toFixed(2)} helpText={`Max rank displacement = δ×N = ${Math.round(shuffleRankDelta[0] * (rawData.length || 100))} positions.`} />
-                        )}
-                        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
-                          <p className="font-semibold text-foreground">Privacy guarantee</p>
-                          <p>All marginal distributions are exactly preserved. QI↔SA linkage is broken. Select target columns on the left.</p>
-                        </div>
-                        <SeedInput value={shuffleSeed} onChange={setShuffleSeed} />
-                      </>)}
-
-                      {/* ── Cell Suppression ── */}
-                      {sdcTech === "cell-suppression" && (<>
-                        <div className="grid grid-cols-1 gap-3">
-                          <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2">
-                            <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">Table Builder</p>
-                            <p className="text-xs text-blue-600 dark:text-blue-400">Select row/column variables and an aggregate column to build the cross-tabulation.</p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-sm">Row Variable</Label>
-                            <Select value={csRowCol} onValueChange={setCsRowCol}>
-                              <SelectTrigger data-testid="select-cs-row-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
-                              <SelectContent>{allCols.filter((c) => c !== csColCol).map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-sm">Column Variable</Label>
-                            <Select value={csColCol} onValueChange={setCsColCol}>
-                              <SelectTrigger data-testid="select-cs-col-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
-                              <SelectContent>{allCols.filter((c) => c !== csRowCol).map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-sm">Value / Aggregate Column</Label>
-                            <Select value={csValCol} onValueChange={setCsValCol}>
-                              <SelectTrigger data-testid="select-cs-val-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
-                              <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-sm">Aggregation</Label>
-                            <RadioGroup value={csAggregate} onValueChange={(v) => setCsAggregate(v as typeof csAggregate)} className="flex gap-4">
-                              {([["count","Count"],["sum","Sum"],["mean","Mean"]] as [string,string][]).map(([v, label]) => (
-                                <div key={v} className="flex items-center gap-2">
-                                  <RadioGroupItem value={v} id={`ag-${v}`} />
-                                  <label htmlFor={`ag-${v}`} className="text-xs cursor-pointer">{label}</label>
-                                </div>
-                              ))}
-                            </RadioGroup>
-                          </div>
-                        </div>
-                        <SliderField label="Min Frequency (n-rule)" value={csNMin} onChange={setCsNMin} min={1} max={10} step={1} format={(v) => String(v)} helpText={`Suppress cells with fewer than ${csNMin[0]} records (NSO standard: 3–5)`} />
-                        <SliderField label="Dominance Threshold (p%)" value={csPPct} onChange={setCsPPct} min={50} max={95} step={1} format={(v) => `${v}%`} helpText={`Suppress if top-k contributors exceed ${csPPct[0]}% of cell total (NSO standard: 70%)`} />
-                        <SliderField label="Dominance k" value={csKDom} onChange={setCsKDom} min={1} max={3} step={1} format={(v) => String(v)} helpText="Number of top contributors to check in dominance rule" />
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label className="text-sm">Apply Secondary Suppression</Label>
-                            <p className="text-xs text-muted-foreground">Greedy secondary to prevent back-calculation from marginals</p>
-                          </div>
-                          <Switch checked={csSecondary} onCheckedChange={setCsSecondary} />
-                        </div>
-                      </>)}
-
-                      {/* Pre-flight checks */}
-                      {preFlightChecks.length > 0 && <PreFlightPanel checks={preFlightChecks} />}
-
-                      <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
-                    </CardContent>
-                  </Card>
-                  {result && <ResultCard result={result} />}
-                </div>
+          {/* ══ ATTACK MITIGATION MATRIX ══════════════════════════════════════ */}
+          {family === "matrix" && (
+            <div className="space-y-6">
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Attack Mitigation Matrix</p>
+                <p className="text-xs text-muted-foreground">NIST-aligned blueprint — 15 techniques × 10 attack types.</p>
               </div>
-            </TabsContent>
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                <table className="w-full text-xs border-collapse min-w-[900px]">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                      <th className="text-left px-3 py-2 font-semibold w-[180px]">Technique</th>
+                      <th className="text-left px-2 py-2 font-semibold text-muted-foreground text-xs w-[80px]">Family</th>
+                      {ATTACK_COLUMNS.map((col) => (
+                        <th key={col.key} className="px-2 py-2 font-semibold text-center whitespace-nowrap">{col.short}</th>
+                      ))}
+                      <th className="px-2 py-2 font-semibold text-center whitespace-nowrap">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ATTACK_MATRIX.map((row) => {
+                      const counts = countMitigations(row);
+                      const score = counts.stops + counts.partial * 0.5;
+                      return (
+                        <tr key={row.technique} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                          <td className="px-3 py-2 font-medium">{row.technique}</td>
+                          <td className="px-2 py-2">
+                            <Badge variant="outline" className="text-[10px] py-0">{row.family}</Badge>
+                          </td>
+                          {ATTACK_COLUMNS.map((col) => (
+                            <td key={col.key} className="px-2 py-2 text-center">
+                              <MitigationBadge level={row.attacks[col.key]} />
+                            </td>
+                          ))}
+                          <td className="px-2 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(score / 10) * 100}%` }} />
+                              </div>
+                              <span className="text-[10px] font-mono">{score.toFixed(1)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {ATTACK_COLUMNS.map((col) => {
+                  const stopsCount   = ATTACK_MATRIX.filter((r) => r.attacks[col.key] === "Stops").length;
+                  const partialCount = ATTACK_MATRIX.filter((r) => r.attacks[col.key] === "Partial").length;
+                  return (
+                    <div key={col.key} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                      <p className="text-xs font-semibold truncate">{col.label}</p>
+                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{stopsCount}</p>
+                      <p className="text-xs text-muted-foreground">{stopsCount} stop · {partialCount} partial</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-            {/* ══ FAMILY 2: DIFFERENTIAL PRIVACY ═════════════════════════════ */}
-            <TabsContent value="dp" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[290px_1fr] min-w-0">
+          {/* ══ FAMILY 1: SDC ═════════════════════════════════════════════════ */}
+          {family === "sdc" && (
+            <div className="flex gap-6">
+              <div className="w-[185px] shrink-0">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Technique</p>
+                <TechList items={SDC_TECHNIQUES} selected={sdcTech} onSelect={(id) => {
+                  setSdcTech(id); setResult(null);
+                  setTargetCols([]); setQuasiIdentifiers([]); setSensitiveAttr("");
+                  autoAssistDoneRef.current = "";
+                }} />
+              </div>
+              <div className="flex-1 min-w-0 space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    {SDC_TECHNIQUES.find((t) => t.id === sdcTech)?.label} Parameters
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{SDC_TECHNIQUES.find((t) => t.id === sdcTech)?.subtitle}</p>
+                </div>
+                <FormulaBox id={sdcTech} />
 
-                {/* ── LEFT SIDEBAR ────────────────────────────────────────────── */}
-                <div className="space-y-3 min-w-0">
+                {sdcTech === "k-anonymity" && (<>
+                  <SliderField label="K Value" value={kVal} onChange={setKVal} min={2} max={25} step={1} format={(v) => String(v)}
+                    helpText={`Each record hidden in a group of ≥ ${kVal[0]} identical QI tuples`}
+                    suggested={autoSuggestions.k ? `Suggested ${autoSuggestions.k}` : undefined} />
+                  <SliderField label="Suppression Limit" value={suppLimit} onChange={setSuppLimit} min={0} max={30} step={1} format={(v) => `${v}%`}
+                    helpText="Maximum % of records to delete if they cannot form a group of size k"
+                    suggested={autoSuggestions.suppLimit !== undefined ? `Suggested ${autoSuggestions.suppLimit}%` : undefined} />
+                  <div className="space-y-2">
+                    <Label className="text-sm">Generalisation Method</Label>
+                    <RadioGroup value={genMethod} onValueChange={(v) => setGenMethod(v as "midpoint" | "range")} className="flex gap-4">
+                      {[["midpoint","Midpoint"],["range","Range"]].map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`gm-${v}`} data-testid={`radio-genmethod-${v}`} />
+                          <label htmlFor={`gm-${v}`} className="text-xs cursor-pointer">{label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                    <p className="text-xs text-muted-foreground">Midpoint: replace range with midpoint · Range: keep as [lo, hi] interval</p>
+                  </div>
+                </>)}
 
-                  {/* Mechanism selector */}
-                  <Card>
-                    <CardHeader className="pb-2"><CardTitle className="text-sm">Mechanism</CardTitle></CardHeader>
-                    <CardContent>
-                      <TechList items={DP_TECHNIQUES} selected={dpTech} onSelect={(id) => { setDpTech(id); setResult(null); }} />
-                    </CardContent>
-                  </Card>
-
-                  {/* S1: Column Configuration banner */}
-                  <Card className="border-purple-200 dark:border-purple-800">
-                    <CardHeader className="pb-1.5 pt-3">
-                      <CardTitle className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <Zap className="h-3 w-3" /> Column Configuration
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${epsilonBadgeClass(epsilon[0])}`}>
-                          ε = {epsilon[0].toFixed(1)}
-                        </span>
-                        <span className="text-[11px] font-medium">{epsilonLabel(epsilon[0])}</span>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground">
-                        Sensitivity: {dpSensitivityMode === "auto" ? "Auto (Min-Max)" : dpSensitivityMode === "iqr" ? "IQR-based" : "Percentile 1–99%"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {dpTech === "laplace" ? "Pure ε-DP · no δ required" : dpTech === "gaussian" ? `(ε,δ)-DP · δ = ${delta[0]}` : "ε-DP via frequency sampling"}
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  {/* S2: Numeric Columns table */}
-                  {(dpTech === "laplace" || dpTech === "gaussian") && (
-                    <Card>
-                      <CardHeader className="pb-1.5 pt-3">
-                        <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center justify-between">
-                          <span className="flex items-center gap-1.5"><BarChart3 className="h-3 w-3 text-blue-500" /> Numeric Cols (Perturbable)</span>
-                          <span className="text-[10px] font-normal text-muted-foreground normal-case">{dpColumnPreview.numCols.length} cols</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pb-3 px-3">
-                        {dpColumnPreview.numCols.length === 0 ? (
-                          <p className="text-[10px] text-muted-foreground italic">No numeric columns detected. Load a dataset first.</p>
-                        ) : (
-                          <div className="space-y-1">
-                            {dpColumnPreview.numCols.map(({ col, sensitivity, noiseScale, risk }) => {
-                              const dot = risk === "high" ? "🔴" : risk === "med" ? "🟡" : "🟢";
-                              const riskLabel = risk === "high" ? "HIGH" : risk === "med" ? "MED" : "LOW";
-                              const fmtNum = (v: number) => v >= 1000 ? v.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : v.toFixed(3);
-                              return (
-                                <div key={col} className="flex items-center gap-1.5 text-[10px] py-0.5 border-b border-border/40 last:border-0">
-                                  <span className="shrink-0">{dot}</span>
-                                  <span className="font-medium w-20 truncate" title={col}>{col}</span>
-                                  <span className="text-muted-foreground flex-1 text-right font-mono" title={`Δf = ${sensitivity}`}>Δf={fmtNum(sensitivity)}</span>
-                                  <span className={`shrink-0 rounded px-1 font-bold text-[9px] ${risk === "high" ? "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300" : risk === "med" ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"}`}>
-                                    {riskLabel}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                            <p className="text-[9px] text-muted-foreground mt-1.5">
-                              🔴 noise &gt; 10× mean &nbsp;·&nbsp; 🟡 1–10× &nbsp;·&nbsp; 🟢 &lt; 1×
-                            </p>
-                            {dpColumnPreview.numCols.some((c) => c.risk === "high") && (
-                              <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
-                                ⚠ High-sensitivity cols detected. Switch to IQR clipping to reduce noise.
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+                {sdcTech === "l-diversity" && (<>
+                  <SliderField label="l Value" value={lVal} onChange={setLVal} min={2} max={10} step={1} format={(v) => String(v)}
+                    helpText={`Each QI group must have ≥ ${lVal[0]} diverse sensitive values`}
+                    suggested={autoSuggestions.l ? `Suggested ${autoSuggestions.l}` : undefined} />
+                  <SliderField label="Base K (min group size)" value={lKBase} onChange={setLKBase} min={2} max={20} step={1} format={(v) => String(v)}
+                    suggested={autoSuggestions.k ? `Suggested ${autoSuggestions.k}` : undefined} />
+                  <div className="space-y-2">
+                    <Label className="text-sm">L-Diversity Variant</Label>
+                    <RadioGroup value={lMethod} onValueChange={(v) => setLMethod(v as typeof lMethod)} className="space-y-1">
+                      {([
+                        ["entropy",   "Entropy  — H(SA|group) ≥ log(l)"],
+                        ["distinct",  "Distinct  — ≥ l unique SA values per group"],
+                        ["recursive", "Recursive  — top-SA value ≤ c · (sum of remaining)"],
+                      ] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`lm-${v}`} data-testid={`radio-lmethod-${v}`} />
+                          <label htmlFor={`lm-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                  {lMethod === "recursive" && (
+                    <SliderField label="Recursive c (dominance bound)" value={cRecursive} onChange={setCRecursive} min={0.1} max={0.9} step={0.05} format={(v) => v.toFixed(2)}
+                      helpText={`c=${cRecursive[0].toFixed(2)}: top SA value ≤ ${cRecursive[0].toFixed(2)} × sum of remaining SA values`} />
                   )}
+                </>)}
 
-                  {/* S3: Categorical Columns */}
-                  <Card>
-                    <CardHeader className="pb-1.5 pt-3">
-                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center justify-between">
-                        <span className="flex items-center gap-1.5"><Network className="h-3 w-3 text-violet-500" /> Categorical Cols</span>
-                        <span className="text-[10px] font-normal text-muted-foreground normal-case">{dpColumnPreview.catCols.length} cols</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3 px-3">
-                      {dpColumnPreview.catCols.length === 0 ? (
-                        <p className="text-[10px] text-muted-foreground italic">No categorical columns detected.</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {dpColumnPreview.catCols.slice(0, 8).map(({ col, uniqueCount, entropy }) => (
-                            <div key={col} className="flex items-center gap-1.5 text-[10px] py-0.5 border-b border-border/40 last:border-0">
-                              <span className="font-medium w-20 truncate" title={col}>{col}</span>
-                              <span className="text-muted-foreground flex-1 text-right">{uniqueCount} vals</span>
-                              <span className="font-mono text-violet-600 dark:text-violet-400 shrink-0">{entropy.toFixed(2)}b</span>
-                            </div>
-                          ))}
-                          {dpColumnPreview.catCols.length > 8 && (
-                            <p className="text-[9px] text-muted-foreground">+{dpColumnPreview.catCols.length - 8} more columns</p>
-                          )}
-                          <p className="text-[9px] text-muted-foreground mt-1">Entropy (bits) — lower = more uniform → Exp. Mech. distorts less</p>
-                          {(dpTech === "laplace" || dpTech === "gaussian") && (
-                            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
-                              ⚠ {dpColumnPreview.catCols.length} categorical col{dpColumnPreview.catCols.length !== 1 ? "s" : ""} untouched by {dpTech === "laplace" ? "Laplace" : "Gaussian"}.
-                              Switch to <strong>Exponential</strong> to protect these.
-                            </p>
-                          )}
-                          {dpTech === "exponential" && (
-                            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">
-                              ✓ Exponential Mechanism will perturb all {dpColumnPreview.catCols.length} categorical columns.
-                            </p>
-                          )}
+                {sdcTech === "t-closeness" && (<>
+                  <SliderField label="t Value" value={tVal} onChange={setTVal} min={0.05} max={0.5} step={0.01} format={(v) => v.toFixed(2)}
+                    helpText={`SA distribution per group within t=${tVal[0].toFixed(2)} of overall distribution`}
+                    suggested={autoSuggestions.t ? `Suggested ${autoSuggestions.t}` : undefined} />
+                  <SliderField label="Base K" value={tKBase} onChange={setTKBase} min={2} max={20} step={1} format={(v) => String(v)}
+                    suggested={autoSuggestions.k ? `Suggested ${autoSuggestions.k}` : undefined} />
+                  <div className="space-y-2">
+                    <Label className="text-sm">Distance Metric</Label>
+                    <RadioGroup value={tDistMetric} onValueChange={(v) => setTDistMetric(v as "emd" | "tvd")} className="flex gap-4">
+                      {([["emd","EMD (Earth Mover's Distance)"],["tvd","TVD (Total Variation Distance)"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`tdm-${v}`} />
+                          <label htmlFor={`tdm-${v}`} className="text-xs cursor-pointer">{label}</label>
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                </>)}
 
-                  {/* S4: Budget Allocator */}
-                  <Card>
-                    <CardHeader className="pb-1.5 pt-3">
-                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                        <Zap className="h-3 w-3 text-purple-500" /> Budget (ε) Allocator
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3 space-y-2.5">
-                      {(() => {
-                        const nCols = dpTech === "exponential" ? dpColumnPreview.catCols.length : dpColumnPreview.numCols.length;
-                        const epsilonPerCol = nCols > 0 ? epsilon[0] / nCols : epsilon[0];
-                        const totalBasic = epsilon[0] * nCols;
-                        const spent = dpBudgetMode === "equal" ? epsilon[0] : totalBasic;
-                        const budgetPct = Math.min(100, (spent / Math.max(epsilon[0], 0.01)) * 100);
-                        return (<>
-                          <RadioGroup value={dpBudgetMode} onValueChange={(v) => setDpBudgetMode(v as typeof dpBudgetMode)} className="space-y-1.5">
-                            {([
-                              ["global",       "Global ε",       `Each col uses full ε = ${epsilon[0].toFixed(1)} (total cost = ${totalBasic.toFixed(1)})`],
-                              ["equal",        "Equal split",    `ε per col = ${epsilon[0].toFixed(1)} / ${nCols} = ${epsilonPerCol.toFixed(3)} (tighter per-col)`],
-                              ["proportional", "Proportional",   "Low-sensitivity cols get more ε, high-sensitivity cols get less"],
-                            ] as [typeof dpBudgetMode, string, string][]).map(([val, title, desc]) => (
-                              <div key={val} className="flex items-start gap-1.5">
-                                <RadioGroupItem value={val} id={`dp-budget-${val}`} data-testid={`dp-budget-${val}`} className="mt-0.5 shrink-0" />
-                                <label htmlFor={`dp-budget-${val}`} className="cursor-pointer">
-                                  <span className="text-[11px] font-medium">{title}</span>
-                                  <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
-                                </label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          {/* Budget meter */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[10px] text-muted-foreground">
-                              <span>Budget: {spent.toFixed(2)} / {epsilon[0].toFixed(1)}</span>
-                              <span>{budgetPct.toFixed(0)}% spent</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${budgetPct > 100 ? "bg-rose-500" : budgetPct > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
-                                style={{ width: `${Math.min(budgetPct, 100)}%` }}
-                              />
-                            </div>
-                            {dpBudgetMode === "global" && nCols > 1 && (
-                              <p className="text-[9px] text-amber-600 dark:text-amber-400">
-                                ⚠ Sequential composition: true cost ≈ {totalBasic.toFixed(1)} (Basic) or ≈{(epsilon[0] * Math.sqrt(2 * nCols * Math.log(1 / 1e-5))).toFixed(2)} (Advanced)
-                              </p>
-                            )}
-                          </div>
-                        </>);
-                      })()}
-                    </CardContent>
-                  </Card>
+                {sdcTech === "rank-swapping" && (<>
+                  <SliderField label="Swap Fraction" value={swapFrac} onChange={setSwapFrac} min={0.01} max={0.5} step={0.01} format={(v) => `${(v * 100).toFixed(0)}%`}
+                    helpText={`Each value swaps within ±${Math.round(swapFrac[0] * (rawData.length || 100))} positions`}
+                    suggested={autoSuggestions.swapFrac ? `Suggested ${(autoSuggestions.swapFrac * 100).toFixed(0)}%` : undefined} />
+                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-semibold text-foreground">Privacy guarantee</p>
+                    <p>Values swapped between rank-neighbors only. Order statistics preserved within ±p×N positions.</p>
+                    <p>· Marginal distributions preserved: ✅</p>
+                  </div>
+                  <SeedInput value={swapSeed} onChange={setSwapSeed} />
+                </>)}
 
-                  {/* S5: Sensitivity / Clipping Strategy */}
-                  <Card>
-                    <CardHeader className="pb-1.5 pt-3">
-                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                        <BarChart3 className="h-3 w-3 text-blue-500" /> Sensitivity / Clipping
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3">
-                      <RadioGroup value={dpSensitivityMode} onValueChange={(v) => setDpSensitivityMode(v as SensitivityMode)} className="space-y-2">
-                        {([
-                          ["auto",       "Auto (Min–Max)",        "Δf = max − min. Exact but outliers inflate noise."],
-                          ["iqr",        "IQR-based (Robust)",    "Clips to 1.5×IQR. Outlier-resistant, lower noise."],
-                          ["percentile", "Percentile (1%–99%)",  "Δf = P99 − P01. Good balance."],
-                        ] as [SensitivityMode, string, string][]).map(([val, title, desc]) => (
-                          <div key={val} className="flex items-start gap-1.5">
-                            <RadioGroupItem value={val} id={`dp-clip-${val}`} data-testid={`dp-clip-${val}`} className="mt-0.5 shrink-0" />
-                            <label htmlFor={`dp-clip-${val}`} className="cursor-pointer">
-                              <span className="text-[11px] font-medium">{title}</span>
-                              <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
-                            </label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                      {dpColumnPreview.numCols.some((c) => c.sensitivity > 100000) && (
-                        <p className="mt-2 text-[10px] text-amber-600 dark:text-amber-400">
-                          ⚠ Column range &gt; 100,000 detected. IQR-based clipping strongly recommended.
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* S6: Composition Mode */}
-                  <Card>
-                    <CardHeader className="pb-1.5 pt-3">
-                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                        <GitMerge className="h-3 w-3 text-indigo-500" /> Composition Settings
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3 space-y-2">
-                      <RadioGroup value={dpCompositionMode} onValueChange={(v) => setDpCompositionMode(v as typeof dpCompositionMode)} className="space-y-1.5">
-                        {([
-                          ["basic",    "Basic (sequential)",   "ε_total = Σεᵢ — simple, conservative"],
-                          ["advanced", "Advanced (moments)",   "Tighter bound via moments accountant"],
-                          ["renyi",    "Rényi DP",             "Tightest — uses Rényi divergence"],
-                        ] as [typeof dpCompositionMode, string, string][]).map(([val, title, desc]) => (
-                          <div key={val} className="flex items-start gap-1.5">
-                            <RadioGroupItem value={val} id={`dp-comp-${val}`} data-testid={`dp-comp-${val}`} className="mt-0.5 shrink-0" />
-                            <label htmlFor={`dp-comp-${val}`} className="cursor-pointer">
-                              <span className="text-[11px] font-medium">{title}</span>
-                              <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
-                            </label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                      {(() => {
-                        const nCols = dpTech === "exponential" ? dpColumnPreview.catCols.length : dpColumnPreview.numCols.length;
-                        if (nCols === 0) return null;
-                        const basic = epsilon[0] * nCols;
-                        const adv   = epsilon[0] * Math.sqrt(2 * nCols * Math.log(1 / 1e-5));
-                        const renyi = adv * 0.72;
-                        return (
-                          <div className="rounded bg-muted/40 p-2 text-[10px] space-y-0.5">
-                            <div className="flex justify-between"><span className="text-muted-foreground">Basic:</span><span className="font-mono font-semibold">{basic.toFixed(2)}</span></div>
-                            <div className="flex justify-between"><span className="text-muted-foreground">Advanced:</span><span className="font-mono font-semibold">≈ {adv.toFixed(2)}</span></div>
-                            <div className="flex justify-between"><span className="text-muted-foreground">Rényi:</span><span className="font-mono font-semibold">≈ {renyi.toFixed(2)}</span></div>
-                            <p className="text-[9px] text-muted-foreground pt-0.5">Estimated total ε cost for {nCols} columns</p>
-                          </div>
-                        );
-                      })()}
-                    </CardContent>
-                  </Card>
-
-                  {/* S7: Pre-flight Check */}
-                  <Card>
-                    <CardHeader className="pb-1.5 pt-3">
-                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                        <Zap className="h-3 w-3 text-yellow-500" /> Pre-flight Check
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3">
-                      {rawData.length === 0 ? (
-                        <p className="text-[10px] text-muted-foreground italic">Load a dataset to see pre-flight checks.</p>
-                      ) : (() => {
-                        const numC = dpColumnPreview.numCols;
-                        const catC = dpColumnPreview.catCols;
-                        const isLapGau = dpTech === "laplace" || dpTech === "gaussian";
-                        const colsOk = isLapGau ? numC.length > 0 : catC.length > 0;
-                        const epsilonOk = epsilon[0] > 0 && epsilon[0] <= 10;
-                        const highNoiseCols = numC.filter((c) => c.risk === "high");
-                        const highSensCols = numC.filter((c) => c.sensitivity > 100000);
-                        const catUntouched = isLapGau && catC.length > 0 && !dpProtectCategorical;
-                        const catProtected = isLapGau && catC.length > 0 && dpProtectCategorical;
-                        const deltaOk = dpTech !== "gaussian" || delta[0] > 0;
-                        const checks: { icon: string; text: string; sub?: string; type: "ok"|"warn"|"info" }[] = [
-                          colsOk
-                            ? { icon: "✅", text: `${isLapGau ? numC.length + " numeric" : catC.length + " categorical"} columns available`, type: "ok" }
-                            : { icon: "❌", text: `No ${isLapGau ? "numeric" : "categorical"} columns found`, sub: "Load data or switch mechanism", type: "warn" },
-                          epsilonOk
-                            ? { icon: "✅", text: `ε = ${epsilon[0].toFixed(1)} — ${epsilonLabel(epsilon[0])}`, type: "ok" }
-                            : { icon: "⚠", text: "ε out of valid range (0 < ε ≤ 10)", type: "warn" },
-                          { icon: "✅", text: `Sensitivity: ${dpSensitivityMode === "auto" ? "Auto (Min-Max, adaptive)" : dpSensitivityMode === "iqr" ? "IQR-based" : "Percentile 1–99%"}`, type: "ok" },
-                          ...(highNoiseCols.length > 0 ? [{ icon: "⚠", text: `High noise: ${highNoiseCols.slice(0, 2).map((c) => c.col).join(", ")}${highNoiseCols.length > 2 ? " +" + (highNoiseCols.length - 2) + " more" : ""}`, sub: "Noise scale > 10× mean. Try IQR clipping.", type: "warn" as const }] : []),
-                          ...(highSensCols.length > 0 ? [{ icon: "⚠", text: `Range > 100K: ${highSensCols.map((c) => c.col).join(", ")}`, sub: "Auto-mode upgraded to IQR for these columns.", type: "warn" as const }] : []),
-                          ...(catProtected ? [{ icon: "✅", text: `${catC.length} categorical col${catC.length !== 1 ? "s" : ""} protected (Mixed DP)`, sub: "Exponential Mechanism applied alongside " + (dpTech === "laplace" ? "Laplace" : "Gaussian") + ".", type: "ok" as const }] : []),
-                          ...(catUntouched ? [{ icon: "⚠", text: `${catC.length} categorical col${catC.length !== 1 ? "s" : ""} untouched`, sub: "Enable 'Also protect categoricals' toggle to add Exponential Mechanism.", type: "warn" as const }] : []),
-                          ...(dpTech === "gaussian" ? [
-                            deltaOk
-                              ? { icon: "ℹ", text: `δ = ${delta[0]} for (ε,δ)-DP`, type: "info" as const }
-                              : { icon: "❌", text: "δ must be > 0 for Gaussian", type: "warn" as const },
-                          ] : [{ icon: "ℹ", text: "δ = 0 (pure ε-DP)", sub: "No catastrophic failure probability.", type: "info" as const }]),
-                          { icon: "✅", text: `Dataset: N = ${rawData.length} rows`, sub: `δ ≤ 1/N² = ${(1/(rawData.length*rawData.length)).toExponential(1)} recommended`, type: "ok" },
-                        ];
-                        return (
-                          <div className="space-y-1.5">
-                            {checks.map((c, i) => (
-                              <div key={i} className="flex items-start gap-1.5">
-                                <span className="text-[11px] shrink-0 mt-0.5">{c.icon}</span>
-                                <div>
-                                  <p className={`text-[10px] font-medium leading-tight ${c.type === "warn" ? "text-amber-700 dark:text-amber-400" : c.type === "info" ? "text-blue-600 dark:text-blue-400" : ""}`}>{c.text}</p>
-                                  {c.sub && <p className="text-[9px] text-muted-foreground leading-tight">{c.sub}</p>}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </CardContent>
-                  </Card>
-
-                  {/* S8: Reproducibility */}
-                  <Card>
-                    <CardHeader className="pb-1.5 pt-3">
-                      <CardTitle className="text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                        <Server className="h-3 w-3 text-slate-500" /> Reproducibility
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label className="text-[11px] font-medium">Fixed Random Seed</Label>
-                          <p className="text-[9px] text-muted-foreground">Same seed + ε = identical output every run</p>
+                {sdcTech === "microagg" && (<>
+                  <SliderField label="Cluster Size (k)" value={microK} onChange={setMicroK} min={2} max={20} step={1} format={(v) => String(v)}
+                    helpText="Minimum cluster size for MDAV. Values replaced with cluster centroid."
+                    suggested={autoSuggestions.microK ? `Suggested ${autoSuggestions.microK}` : undefined} />
+                  <div className="space-y-2">
+                    <Label className="text-sm">Distance Metric</Label>
+                    <RadioGroup value={microDist} onValueChange={(v) => setMicroDist(v as typeof microDist)} className="flex gap-4">
+                      {([["euclidean","Euclidean (L2)"],["manhattan","Manhattan (L1)"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`md-${v}`} />
+                          <label htmlFor={`md-${v}`} className="text-xs cursor-pointer">{label}</label>
                         </div>
-                        <Switch checked={dpSeedEnabled} onCheckedChange={setDpSeedEnabled} data-testid="dp-seed-toggle" />
-                      </div>
-                      {dpSeedEnabled && (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number" value={dpSeed} min={0} max={999999}
-                            onChange={(e) => setDpSeed(Math.max(0, parseInt(e.target.value) || 0))}
-                            data-testid="dp-seed-input"
-                            className="w-24 rounded border border-input bg-background px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
-                          />
-                          <span className="text-[9px] text-muted-foreground">Required for audit trails</span>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                </>)}
+
+                {sdcTech === "pram" && (<>
+                  <SliderField label="Retention Probability" value={pramRetention} onChange={setPramRetention} min={0.1} max={0.99} step={0.01} format={(v) => v.toFixed(2)}
+                    helpText={`P(keep original) = ${pramRetention[0].toFixed(2)}, P(perturb) = ${(1 - pramRetention[0]).toFixed(2)}`}
+                    suggested={autoSuggestions.pramRet ? `Suggested ${autoSuggestions.pramRet.toFixed(2)}` : undefined} />
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    P(keep original) = {pramRetention[0].toFixed(2)} · P(perturb) = {(1 - pramRetention[0]).toFixed(2)}
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">PRAM Variant</Label>
+                    <RadioGroup value={pramVariant} onValueChange={(v) => setPramVariant(v as typeof pramVariant)} className="flex gap-4">
+                      {([["simple","Simple PRAM"],["unbiased","Unbiased PRAM"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`pv-${v}`} />
+                          <label htmlFor={`pv-${v}`} className="text-xs cursor-pointer">{label}</label>
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                      ))}
+                    </RadioGroup>
+                    <p className="text-xs text-muted-foreground">Unbiased: post-processing correction to restore marginal distributions</p>
+                  </div>
+                  <SeedInput value={pramSeed} onChange={setPramSeed} />
+                </>)}
 
-                </div>{/* end left sidebar */}
-
-                {/* ── RIGHT PANEL ─────────────────────────────────────────────── */}
-                <div className="space-y-4 min-w-0 overflow-hidden">
-
-                  {/* Main parameters card */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Lock className="h-4 w-4 text-purple-500" />
-                        {DP_TECHNIQUES.find((t) => t.id === dpTech)?.label} Parameters
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <FormulaBox id={dpTech} />
-
-                      {/* ε slider + budget badge */}
-                      <div className="space-y-2">
-                        <SliderField
-                          label="Privacy Budget (ε)"
-                          value={epsilon} onChange={setEpsilon}
-                          min={0.1} max={10} step={0.1}
-                          format={(v) => v.toFixed(1)}
-                          helpText="Lower ε = stronger privacy, more noise. ε ≤ 1 = strong DP."
-                        />
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white ${epsilonBadgeClass(epsilon[0])}`}>
-                            ε = {epsilon[0].toFixed(1)} — {epsilonLabel(epsilon[0])}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {epsilon[0] <= 0.5 ? "Strongest protection, highest noise." :
-                             epsilon[0] <= 1.0 ? "Strong protection for sensitive census data." :
-                             epsilon[0] <= 2.0 ? "Moderate — suitable for research partner access." :
-                             epsilon[0] <= 5.0 ? "Acceptable — consider ε ≤ 1 for public release." :
-                             "⚠ Weak — not recommended for sensitive data."}
-                          </span>
-                        </div>
-                        {/* Quick-pick presets */}
-                        <div className="flex gap-1.5 flex-wrap">
-                          {([0.1, 0.5, 1.0, 2.0, 5.0] as number[]).map((v) => (
-                            <button
-                              key={v}
-                              data-testid={`dp-epsilon-preset-${v}`}
-                              onClick={() => setEpsilon([v])}
-                              className={`rounded px-2 py-0.5 text-[10px] font-mono border transition-colors ${
-                                epsilon[0] === v
-                                  ? "bg-purple-600 text-white border-purple-600"
-                                  : "border-border text-muted-foreground hover:border-purple-400 hover:text-purple-600"
-                              }`}
-                            >{v}</button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* δ for Gaussian */}
-                      {dpTech === "gaussian" && (
-                        <div className="space-y-2">
-                          <Label className="text-sm">Delta (δ) <span className="text-muted-foreground text-xs">— probability of catastrophic failure</span></Label>
-                          <RadioGroup value={String(delta[0])} onValueChange={(v) => setDelta([parseFloat(v)])} className="flex flex-wrap gap-3">
-                            {([["1e-5","1×10⁻⁵ (recommended)"],["1e-6","1×10⁻⁶ (stricter)"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-1.5">
-                                <RadioGroupItem value={v} id={`dp-delta-${v}`} data-testid={`dp-delta-${v}`} />
-                                <label htmlFor={`dp-delta-${v}`} className="text-xs font-mono cursor-pointer">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          <p className="text-xs text-muted-foreground font-mono">
-                            σ = Δf · √(2 ln(1.25/δ)) / ε = <strong>{(Math.sqrt(2 * Math.log(1.25 / delta[0])) / epsilon[0]).toFixed(3)} × Δf</strong>
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            Recommended δ ≤ 1/N² = {rawData.length > 0 ? (1 / (rawData.length * rawData.length)).toExponential(2) : "—"} for N = {rawData.length}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Exponential info box */}
-                      {dpTech === "exponential" && (
-                        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
-                          <p className="font-semibold text-foreground">Categorical columns only</p>
-                          <p>Samples each record's category from Pr[output = r] ∝ exp(ε·freq(r) / 2Δu) where Δu = 1/N.</p>
-                          <p>Higher ε = output more strongly biased toward common categories (utility preserved).</p>
-                        </div>
-                      )}
-
-                      {/* Post-clamp toggle */}
-                      {(dpTech === "laplace" || dpTech === "gaussian") && (
-                        <div className="flex items-center justify-between rounded-lg border p-3">
-                          <div>
-                            <Label className="text-sm font-medium">Clamp output to valid range</Label>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
-                              Clamp noisy values back to [lo, hi] bounds. Prevents out-of-range output.
-                            </p>
-                          </div>
-                          <Switch checked={dpPostClamp} onCheckedChange={setDpPostClamp} data-testid="dp-postclamp-toggle" />
-                        </div>
-                      )}
-
-                      {(dpTech === "laplace" || dpTech === "gaussian") && dpColumnPreview.catCols.length > 0 && (
-                        <div className="flex items-center justify-between rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 p-3">
-                          <div>
-                            <Label className="text-sm font-medium">Also protect categorical columns</Label>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
-                              Adds Exponential Mechanism to {dpColumnPreview.catCols.length} categorical col{dpColumnPreview.catCols.length !== 1 ? "s" : ""} in the same pass (Mixed DP).
-                            </p>
-                          </div>
-                          <Switch checked={dpProtectCategorical} onCheckedChange={setDpProtectCategorical} data-testid="dp-protect-categorical-toggle" />
-                        </div>
-                      )}
-
-                      <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
-                    </CardContent>
-                  </Card>
-
-                  {result && <ResultCard result={result} />}
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* ══ FAMILY 3: SYNTHETIC DATA ════════════════════════════════════ */}
-            <TabsContent value="synthetic" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
-                <Card>
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Method</CardTitle></CardHeader>
-                  <CardContent>
-                    <TechList items={SDG_TECHNIQUES} selected={sdgTech} onSelect={(id) => { setSdgTech(id); setResult(null); }} />
-                  </CardContent>
-                </Card>
-                <div className="space-y-4 min-w-0 overflow-hidden">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Sparkles className="h-4 w-4 text-emerald-500" />
-                        {SDG_TECHNIQUES.find((t) => t.id === sdgTech)?.label} Parameters
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <FormulaBox id={sdgTech} />
-                      <SliderField label="Output Size" value={synthSize} onChange={setSynthSize} min={25} max={500} step={5} format={(v) => `${v}%`} helpText={`Generate ${Math.round((rawData.length || 100) * synthSize[0] / 100)} records (${synthSize[0]}% of original)`} />
-
-                      {/* ── Statistical SDG parameters ─────────────────────── */}
-                      {sdgTech === "stat-sdg" && (<>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label className="text-sm">Preserve Correlations</Label>
-                            <p className="text-xs text-muted-foreground">Gaussian Copula — retains pairwise dependency structure</p>
-                          </div>
-                          <Switch checked={preserveCorr} onCheckedChange={setPreserveCorr} data-testid="stat-sdg-preserve-corr" />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-sm">KDE Bandwidth Rule</Label>
-                          <RadioGroup value={synthBandwidthRule} onValueChange={(v) => setSynthBandwidthRule(v as "silverman"|"scott"|"fixed")} className="flex flex-wrap gap-3">
-                            {([["silverman","Silverman"],["scott","Scott"],["fixed","Fixed"]] as [string,string][]).map(([v, label]) => (
-                              <div key={v} className="flex items-center gap-1.5">
-                                <RadioGroupItem value={v} id={`bw-${v}`} />
-                                <label htmlFor={`bw-${v}`} className="text-xs cursor-pointer">{label}</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                          <p className="text-[10px] text-muted-foreground">
-                            {synthBandwidthRule === "silverman" ? "h = 0.9 × min(σ, IQR/1.34) × n⁻¹⁄⁵ — recommended for most datasets"
-                            : synthBandwidthRule === "scott" ? "h = 1.06 × σ × n⁻¹⁄⁵ — wider, better for light-tailed distributions"
-                            : "h = (max−min)/20 — fixed bins, useful for uniform-like columns"}
-                          </p>
-                        </div>
-                      </>)}
-
-                      {/* ── DP-SDG parameters ──────────────────────────────── */}
-                      {sdgTech === "dp-sdg" && (() => {
-                        const N = rawData.length || 100;
-                        const B = dpSgdBatchSize;
-                        // Issue 1+2 fix: clamp effectiveB so q = effectiveB/N ≤ 1
-                        const effectiveB = Math.min(B, N);
-                        const bOverflow = B > N;
-                        const q = effectiveB / N;
-                        const T = dpSgdEpochs * Math.ceil(N / effectiveB);
-                        const sigma = computeSigmaFromEpsilon(epsilon[0], delta[0], T, N, effectiveB);
-                        const epsActual = computeEpsilonFromSigma(sigma, delta[0], T, N, effectiveB);
-                        const puIndex = Math.max(0, Math.min(1, 1 - epsActual / 10));
-                        return (<>
-                          <SliderField label="Privacy Budget (ε)" value={epsilon} onChange={setEpsilon} min={0.1} max={10} step={0.1} format={(v) => v.toFixed(1)} helpText="Lower = stronger privacy guarantee" />
-                          <div className="space-y-2">
-                            <Label className="text-sm">Delta (δ)</Label>
-                            <RadioGroup value={String(delta[0])} onValueChange={(v) => setDelta([parseFloat(v)])} className="flex flex-wrap gap-3">
-                              {([["1e-5","1×10⁻⁵"],["1e-6","1×10⁻⁶"]] as [string,string][]).map(([v, label]) => (
-                                <div key={v} className="flex items-center gap-1.5">
-                                  <RadioGroupItem value={v} id={`sdg-delta-${v}`} />
-                                  <label htmlFor={`sdg-delta-${v}`} className="text-xs font-mono cursor-pointer">{label}</label>
-                                </div>
-                              ))}
-                            </RadioGroup>
-                          </div>
-                          <SliderField label="Gradient Clipping Norm (C)" value={dpSgdClip} onChange={setDpSgdClip} min={0.1} max={5} step={0.1} format={(v) => v.toFixed(1)} helpText="Bounds sensitivity of each sample's contribution. C = 1.0 recommended." />
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                              <Label className="text-sm">Training Epochs</Label>
-                              <Input type="number" min={50} max={1000} value={dpSgdEpochs}
-                                onChange={(e) => setDpSgdEpochs(Math.max(50, Math.min(1000, parseInt(e.target.value) || 300)))}
-                                className="h-8 text-xs font-mono" data-testid="dp-sdg-epochs" />
-                              <p className="text-[10px] text-muted-foreground">50 – 1000 epochs</p>
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-sm">Batch Size (B)</Label>
-                              <Input type="number" min={64} max={2048} value={dpSgdBatchSize}
-                                onChange={(e) => setDpSgdBatchSize(Math.max(64, Math.min(2048, parseInt(e.target.value) || 500)))}
-                                className={`h-8 text-xs font-mono ${bOverflow ? "border-amber-500 dark:border-amber-400" : ""}`}
-                                data-testid="dp-sdg-batchsize" />
-                              <p className="text-[10px] text-muted-foreground">
-                                {bOverflow
-                                  ? <span className="text-amber-600 dark:text-amber-400 font-medium">B &gt; N — clamped to {effectiveB}. Recommend ≈ {Math.ceil(N / 10)}</span>
-                                  : `Recommend ≈ N/10 = ${Math.ceil(N / 10)} records`}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* B > N overflow alert (Issue 1 fix) */}
-                          {bOverflow && (
-                            <div className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-2.5 flex gap-2 text-xs text-amber-800 dark:text-amber-300">
-                              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
-                              <span>
-                                <strong>Batch size {B} &gt; N={N}.</strong> Poisson subsampling requires q = B/N ≤ 1.
-                                Automatically clamped to B = {effectiveB} (q = 1.0). RDP accounting is now valid.
-                                For better privacy-utility tradeoff, set B ≈ {Math.ceil(N / 10)}.
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Live Privacy Budget Panel */}
-                          <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3 space-y-2">
-                            <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
-                              <Shield className="h-3.5 w-3.5" /> Live Privacy Budget (RDP Accountant)
-                            </p>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono">
-                              <span className="text-muted-foreground">Target ε</span>
-                              <span className="font-semibold">{epsilon[0].toFixed(1)}</span>
-                              <span className="text-muted-foreground">Eff. Batch (q)</span>
-                              <span className={`font-semibold ${bOverflow ? "text-amber-600 dark:text-amber-400" : ""}`}>
-                                {effectiveB} (q = {q.toFixed(3)})
-                              </span>
-                              <span className="text-muted-foreground">Required σ</span>
-                              <span className="font-semibold text-amber-600 dark:text-amber-400">{sigma.toFixed(3)}</span>
-                              <span className="text-muted-foreground">Achieved ε</span>
-                              <span className={`font-semibold ${epsActual <= epsilon[0] * 1.05 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
-                                {epsActual.toFixed(3)}
-                              </span>
-                              <span className="text-muted-foreground">Total Steps T</span>
-                              <span className="font-semibold">{T.toLocaleString()}</span>
-                              <span className="text-muted-foreground">Privacy-Utility</span>
-                              <span className="font-semibold">{(puIndex * 100).toFixed(1)}%</span>
-                            </div>
-                          </div>
-                        </>);
-                      })()}
-
-                      {/* ── Shared: Seed control ────────────────────────────── */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label className="text-sm">Fixed Random Seed</Label>
-                          <p className="text-xs text-muted-foreground">Reproducible generation across runs</p>
-                        </div>
-                        <Switch checked={synthSeedEnabled} onCheckedChange={setSynthSeedEnabled} data-testid="sdg-seed-toggle" />
-                      </div>
-                      {synthSeedEnabled && (
-                        <div className="space-y-1.5">
-                          <Label className="text-sm">Seed Value</Label>
-                          <Input type="number" value={synthSeed}
-                            onChange={(e) => setSynthSeed(parseInt(e.target.value) || 42)}
-                            className="h-8 text-xs font-mono w-32" data-testid="sdg-seed-input" />
-                        </div>
-                      )}
-
-                      <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
-                    </CardContent>
-                  </Card>
-                  {result && <ResultCard result={result} />}
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* ══ FAMILY 4: CRYPTOGRAPHIC PETs ═══════════════════════════════ */}
-            <TabsContent value="crypto" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
-                <Card>
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Protocol</CardTitle></CardHeader>
-                  <CardContent>
-                    <TechList items={CRYPTO_TECHNIQUES} selected={cryptoTech} onSelect={(id) => { setCryptoTech(id); setResult(null); }} />
-                  </CardContent>
-                </Card>
-                <div className="space-y-4 min-w-0 overflow-hidden">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Key className="h-4 w-4 text-amber-500" />
-                        {CRYPTO_TECHNIQUES.find((t) => t.id === cryptoTech)?.label} Parameters
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <FormulaBox id={cryptoTech} />
-                      <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3">
-                        <div className="flex gap-2">
-                          <Server className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                          <p className="text-xs text-amber-700 dark:text-amber-400">
-                            <strong>Educational Simulation.</strong> Demonstrates mathematical properties of the cryptographic protocol.
-                          </p>
-                        </div>
-                      </div>
-                      {cryptoTech === "he" && (
-                        <div className="space-y-2">
-                          <Label className="text-sm">Key Size</Label>
-                          <RadioGroup value={heKeySize} onValueChange={setHeKeySize} className="flex gap-4">
-                            {["512","1024","2048"].map((v) => (
-                              <div key={v} className="flex items-center gap-1.5">
-                                <RadioGroupItem value={v} id={`ks-${v}`} />
-                                <label htmlFor={`ks-${v}`} className="text-xs font-mono cursor-pointer">{v}-bit</label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                      )}
-                      {cryptoTech === "smpc" && (<>
-                        <SliderField label="Number of Shares (k)" value={smpcShares} onChange={setSmpcShares} min={2} max={5} step={1} format={(v) => String(v)} helpText="Each value is split into k additive shares over Z_p" />
-                        <SliderField label="Reconstruction Threshold (t)" value={smpcThreshold} onChange={(v) => setSmpcThreshold([Math.min(v[0], smpcShares[0])])} min={2} max={smpcShares[0]} step={1} format={(v) => String(v)} helpText={`t=${smpcThreshold[0]} of k=${smpcShares[0]} shares needed to reconstruct`} />
-                      </>)}
-                      <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
-                    </CardContent>
-                  </Card>
-                  {result && <ResultCard result={result} />}
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* ══ FAMILY 5: FEDERATED LEARNING ════════════════════════════════ */}
-            <TabsContent value="federated" className="mt-4">
-              <div className="grid gap-4 md:grid-cols-[200px_1fr] min-w-0">
-                <div className="space-y-3">
-                  <Card>
-                    <CardHeader className="pb-2"><CardTitle className="text-sm">Protocol</CardTitle></CardHeader>
-                    <CardContent>
-                      <TechList items={FED_TECHNIQUES} selected={fedTech} onSelect={() => {}} />
-                    </CardContent>
-                  </Card>
-
-                  {/* Dataset Summary panel */}
-                  {selectedDS && rawData.length > 0 && (
-                    <Card className="border-rose-200 dark:border-rose-800">
-                      <CardHeader className="pb-1.5 pt-3">
-                        <CardTitle className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
-                          <Database className="h-3 w-3" /> Dataset Summary
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pb-3 space-y-1">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-muted-foreground">Records (n)</span>
-                          <span className="font-mono font-medium">{rawData.length.toLocaleString("en-IN")}</span>
-                        </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-muted-foreground">Columns (d)</span>
-                          <span className="font-mono font-medium">{allCols.length}</span>
-                        </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-muted-foreground">Numeric cols</span>
-                          <span className="font-mono font-medium">{numericCols.length}</span>
-                        </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-muted-foreground">Nodes (K={fedNodes[0]})</span>
-                          <span className="font-mono font-medium">~{Math.ceil(rawData.length / fedNodes[0])} rec/node</span>
-                        </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-muted-foreground">Partition</span>
-                          <span className={`font-medium ${fedPartition === "noniid" ? "text-amber-600" : "text-emerald-600"}`}>
-                            {fedPartition === "noniid" ? "Non-IID" : "IID"}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
+                {sdcTech === "topbottom" && (<>
+                  <SliderField label="Top Percentile Cap" value={topPct} onChange={setTopPct} min={80} max={99} step={1} format={(v) => `${v}th`} helpText="Values above this percentile are capped" />
+                  <SliderField label="Bottom Percentile Cap" value={botPct} onChange={setBotPct} min={1} max={20} step={1} format={(v) => `${v}th`} helpText="Values below this percentile are capped" />
+                  {botPct[0] >= topPct[0] && (
+                    <p className="text-xs text-rose-500">⚠ Bottom percentile must be less than top percentile.</p>
                   )}
-                </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm">Add Gaussian Noise</Label>
+                      <p className="text-xs text-muted-foreground">Inject N(0, λ²σ²) noise after coding</p>
+                    </div>
+                    <Switch checked={addNoise} onCheckedChange={setAddNoise} />
+                  </div>
+                  {addNoise && (
+                    <SliderField label="Noise Level (λ)" value={noiseLevel} onChange={setNoiseLevel} min={0.01} max={0.5} step={0.01} format={(v) => v.toFixed(2)} helpText={`σ_noise = ${noiseLevel[0].toFixed(2)} × column_std`} />
+                  )}
+                </>)}
 
-                <div className="space-y-4 min-w-0 overflow-hidden">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <GitMerge className="h-4 w-4 text-rose-500" />
-                        FedAvg Parameters
-                      </CardTitle>
-                      <CardDescription>McMahan et al. 2017 — Federated Averaging with optional DP</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <FormulaBox id="fedavg" />
-
-                      {/* Federation topology */}
-                      <SliderField label="Federated Nodes (K)" value={fedNodes} onChange={setFedNodes} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Dataset partitioned across ${fedNodes[0]} simulated clients.`} />
-                      <SliderField label="Communication Rounds (T)" value={fedRounds} onChange={setFedRounds} min={1} max={30} step={1} format={(v) => String(v)} helpText="Global FedAvg aggregation rounds" />
-
-                      {/* Partition strategy */}
-                      <div className="space-y-2">
-                        <Label className="text-sm">Partition Strategy</Label>
-                        <RadioGroup value={fedPartition} onValueChange={(v) => setFedPartition(v as "iid" | "noniid")} className="flex gap-5">
-                          <div className="flex items-center gap-1.5">
-                            <RadioGroupItem value="iid" id="fed-iid" />
-                            <label htmlFor="fed-iid" className="text-xs cursor-pointer">IID (random shuffle)</label>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <RadioGroupItem value="noniid" id="fed-noniid" />
-                            <label htmlFor="fed-noniid" className="text-xs cursor-pointer">Non-IID (sorted skew)</label>
-                          </div>
-                        </RadioGroup>
-                      </div>
-
-                      {/* Local training */}
-                      <SliderField label="Local Epochs (E)" value={fedLocalEpochs} onChange={setFedLocalEpochs} min={1} max={10} step={1} format={(v) => String(v)} helpText={`${fedLocalEpochs[0]} local SGD epoch(s) per node per round`} />
-                      <SliderField label="Local Learning Rate (η)" value={fedLocalLR} onChange={setFedLocalLR} min={0.001} max={0.1} step={0.001} format={(v) => v.toFixed(3)} helpText={`SGD learning rate on local data (η=${fedLocalLR[0].toFixed(3)})`} />
-                      <SliderField label="Mini-Batch Size (B)" value={fedBatchSize} onChange={setFedBatchSize} min={2} max={16} step={2} format={(v) => String(v)} helpText={`${fedBatchSize[0]} records per mini-batch (local SGD)`} />
-
-                      {/* DP-FedAvg toggle */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label className="text-sm">Enable DP-FedAvg</Label>
-                          <p className="text-xs text-muted-foreground">Gaussian noise on gradient aggregation</p>
+                {sdcTech === "noise-addition" && (<>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Noise Distribution</Label>
+                    <RadioGroup value={noiseDist} onValueChange={(v) => setNoiseDist(v as typeof noiseDist)} className="space-y-1">
+                      {([["gaussian","Gaussian  N(0, σ²)  — smooth symmetric"],["laplace","Laplace  Lap(0, b)  — heavier tails, stronger DP"],["uniform","Uniform  U(−δ, +δ)  — bounded support"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`nd-${v}`} />
+                          <label htmlFor={`nd-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
                         </div>
-                        <Switch checked={fedDP} onCheckedChange={setFedDP} data-testid="fed-dp-toggle" />
-                      </div>
-                      {fedDP && (<>
-                        <SliderField label="Privacy Budget (ε)" value={fedEps} onChange={setFedEps} min={0.1} max={10} step={0.1} format={(v) => v.toFixed(1)} helpText={`ε=${fedEps[0].toFixed(1)} — lower = more private, more noise`} />
-                        <SliderField label="Delta (δ)" value={fedDelta} onChange={setFedDelta} min={1e-6} max={1e-3} step={1e-6} format={(v) => v.toExponential(0)} helpText={`δ=${fedDelta[0].toExponential(0)} failure probability (typ. 1/N)`} />
-                        <SliderField label="Clip Norm (C)" value={fedClipNorm} onChange={setFedClipNorm} min={0.1} max={5.0} step={0.1} format={(v) => v.toFixed(1)} helpText={`Update clipping: ΔW̃ = ΔW / max(1, ‖ΔW‖_F / C=${fedClipNorm[0].toFixed(1)})`} />
-                        <div className="rounded-md bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 px-3 py-2 text-[11px] text-rose-700 dark:text-rose-400">
-                          <p className="font-medium">Calibrated σ ≈ {(Math.sqrt(2 * fedRounds[0] * fedNodes[0] * Math.log(1 / fedDelta[0])) / fedEps[0]).toFixed(3)}</p>
-                          <p className="mt-0.5 text-rose-600 dark:text-rose-500">σ = √(2TK·ln(1/δ)) / ε  (RDP composition bound)</p>
-                        </div>
-                      </>)}
+                      ))}
+                    </RadioGroup>
+                  </div>
+                  <SliderField label="Noise Multiplier (λ)" value={noiseLambda} onChange={setNoiseLambda} min={0.01} max={1.0} step={0.01} format={(v) => v.toFixed(2)}
+                    helpText={`σ_noise = λ × col_std. SNR = 1/λ² = ${(1 / noiseLambda[0] ** 2).toFixed(1)}`}
+                    suggested={autoSuggestions.noiseLambda ? `Suggested ${autoSuggestions.noiseLambda.toFixed(2)}` : undefined} />
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+                    <p>Estimated MAE ≈ {(0.798 * noiseLambda[0]).toFixed(3)} × σ_col (Gaussian)</p>
+                    <p>Compliance: Pearson r ≥ 0.85 and λ ≤ 0.5</p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm">Clip to Column Range</Label>
+                      <p className="text-xs text-muted-foreground">Clamp noisy values to [min, max] of original</p>
+                    </div>
+                    <Switch checked={noiseClip} onCheckedChange={setNoiseClip} />
+                  </div>
+                  <SeedInput value={noiseSeed} onChange={setNoiseSeed} />
+                </>)}
 
-                      {/* Synthetic output */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label className="text-sm">Generate Synthetic Output</Label>
-                          <p className="text-xs text-muted-foreground">Sample new records from trained decoder</p>
+                {sdcTech === "explicit-suppression" && (<>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Suppression Mode</Label>
+                    <RadioGroup value={suppMode} onValueChange={(v) => setSuppMode(v as typeof suppMode)} className="flex gap-4">
+                      {([["row","Row"],["cell","Cell"],["both","Both"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`sm-${v}`} />
+                          <label htmlFor={`sm-${v}`} className="text-xs cursor-pointer">{label}</label>
                         </div>
-                        <Switch checked={fedGenSynth} onCheckedChange={setFedGenSynth} data-testid="fed-synth-toggle" />
-                      </div>
-                      {fedGenSynth && (
-                        <SliderField label="Synthetic Records" value={fedSynthSize} onChange={setFedSynthSize} min={10} max={500} step={10} format={(v) => String(v)} helpText={`Generate ${fedSynthSize[0]} synthetic records from decoder z~N(0,I)`} />
-                      )}
-
-                      {/* Random seed */}
+                      ))}
+                    </RadioGroup>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Suppression Criterion</Label>
+                    <RadioGroup value={suppCriterion} onValueChange={(v) => setSuppCriterion(v as typeof suppCriterion)} className="space-y-1">
+                      {([
+                        ["uniqueness","Uniqueness  — suppress if QI group size < min"],
+                        ["outlier","Outlier  — suppress if |z-score| > threshold"],
+                        ["sensitive_value","Sensitive Value  — suppress if SA ∈ risk list"],
+                        ["threshold","Threshold  — suppress if value out of bounds"],
+                      ] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`sc-${v}`} />
+                          <label htmlFor={`sc-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                  <SliderField label="Suppression Budget" value={suppBudget} onChange={setSuppBudget} min={1} max={50} step={1} format={(v) => `${v}%`} helpText={`Max ${suppBudget[0]}% of records may be suppressed.`} />
+                  {suppCriterion === "uniqueness" && (
+                    <SliderField label="Min Group Size" value={suppMinGroup} onChange={setSuppMinGroup} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Suppress records whose QI group has < ${suppMinGroup[0]} members`} />
+                  )}
+                  {suppCriterion === "outlier" && (
+                    <SliderField label="Z-Score Threshold" value={suppZThreshold} onChange={setSuppZThreshold} min={1.0} max={5.0} step={0.1} format={(v) => v.toFixed(1)} helpText={`Suppress records with |z| > ${suppZThreshold[0].toFixed(1)}`} />
+                  )}
+                  {suppCriterion === "sensitive_value" && (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Risk Values (comma-separated)</Label>
+                      <input
+                        className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono"
+                        placeholder="e.g. HIV, Cancer, Fraud"
+                        value={suppRiskVals}
+                        onChange={(e) => setSuppRiskVals(e.target.value)}
+                        data-testid="input-risk-values"
+                      />
+                    </div>
+                  )}
+                  {suppCriterion === "threshold" && (
+                    <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-sm">Random Seed</Label>
-                        <Input type="number" value={fedSeed}
-                          onChange={(e) => setFedSeed(parseInt(e.target.value) || 42)}
-                          className="h-8 text-xs font-mono w-32" data-testid="fed-seed-input" />
-                        <p className="text-xs text-muted-foreground">Reproducible node partitioning and weight initialisation</p>
+                        <Label className="text-xs">Lower Bound</Label>
+                        <input className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono" type="number" placeholder="−∞" value={suppLower} onChange={(e) => setSuppLower(e.target.value)} data-testid="input-supp-lower" />
                       </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Upper Bound</Label>
+                        <input className="w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono" type="number" placeholder="+∞" value={suppUpper} onChange={(e) => setSuppUpper(e.target.value)} data-testid="input-supp-upper" />
+                      </div>
+                    </div>
+                  )}
+                </>)}
 
-                      <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
-                    </CardContent>
-                  </Card>
-                  {result && <ResultCard result={result} />}
+                {sdcTech === "generalisation" && (
+                  <div className="space-y-3">
+                    {genColConfigs.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">No columns configured yet. Add one below.</p>
+                    ) : (
+                      <div className="rounded-lg border overflow-hidden">
+                        <div className="bg-muted/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Configured Columns</div>
+                        <div className="divide-y">
+                          {genColConfigs.map((cfg, i) => (
+                            <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+                              <span className="font-medium">{cfg.col}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground font-mono">{cfg.type}{cfg.binWidth ? ` w=${cfg.binWidth}` : cfg.roundTo ? ` r=${cfg.roundTo}` : cfg.topK ? ` k=${cfg.topK}` : ""}</span>
+                                <button className="text-rose-500 hover:text-rose-700 text-xs" onClick={() => setGenColConfigs((p) => p.filter((_, j) => j !== i))}>✕</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <AddGenColRow allCols={allCols} existing={genColConfigs.map((c) => c.col)} onAdd={(cfg) => setGenColConfigs((p) => [...p, cfg])} />
+                  </div>
+                )}
+
+                {sdcTech === "data-shuffling" && (<>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Shuffle Variant</Label>
+                    <RadioGroup value={shuffleVariant} onValueChange={(v) => setShuffleVariant(v as typeof shuffleVariant)} className="space-y-1">
+                      {([
+                        ["full","Full Shuffle  — completely random permutation"],
+                        ["within_group","Within-Group  — shuffle only within each group"],
+                        ["rank_preserving","Rank-Preserving  — limit displacement by δ × N"],
+                      ] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`sv-${v}`} />
+                          <label htmlFor={`sv-${v}`} className="text-xs cursor-pointer font-mono">{label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                  {shuffleVariant === "rank_preserving" && (
+                    <SliderField label="Rank Delta (δ)" value={shuffleRankDelta} onChange={setShuffleRankDelta} min={0.01} max={0.5} step={0.01} format={(v) => v.toFixed(2)} helpText={`Max rank displacement = δ×N = ${Math.round(shuffleRankDelta[0] * (rawData.length || 100))} positions.`} />
+                  )}
+                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-semibold text-foreground">Privacy guarantee</p>
+                    <p>All marginal distributions are exactly preserved. QI↔SA linkage is broken.</p>
+                  </div>
+                  <SeedInput value={shuffleSeed} onChange={setShuffleSeed} />
+                </>)}
+
+                {sdcTech === "cell-suppression" && (<>
+                  <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2">
+                    <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">Table Builder</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400">Select row/column variables and an aggregate column to build the cross-tabulation.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Row Variable</Label>
+                    <Select value={csRowCol} onValueChange={setCsRowCol}>
+                      <SelectTrigger data-testid="select-cs-row-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                      <SelectContent>{allCols.filter((c) => c !== csColCol).map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Column Variable</Label>
+                    <Select value={csColCol} onValueChange={setCsColCol}>
+                      <SelectTrigger data-testid="select-cs-col-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                      <SelectContent>{allCols.filter((c) => c !== csRowCol).map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Value / Aggregate Column</Label>
+                    <Select value={csValCol} onValueChange={setCsValCol}>
+                      <SelectTrigger data-testid="select-cs-val-col"><SelectValue placeholder="Select column…" /></SelectTrigger>
+                      <SelectContent>{allCols.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Aggregation</Label>
+                    <RadioGroup value={csAggregate} onValueChange={(v) => setCsAggregate(v as typeof csAggregate)} className="flex gap-4">
+                      {([["count","Count"],["sum","Sum"],["mean","Mean"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`ag-${v}`} />
+                          <label htmlFor={`ag-${v}`} className="text-xs cursor-pointer">{label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                  <SliderField label="Min Frequency (n-rule)" value={csNMin} onChange={setCsNMin} min={1} max={10} step={1} format={(v) => String(v)} helpText={`Suppress cells with fewer than ${csNMin[0]} records`} />
+                  <SliderField label="Dominance Threshold (p%)" value={csPPct} onChange={setCsPPct} min={50} max={95} step={1} format={(v) => `${v}%`} helpText={`Suppress if top-k contributors exceed ${csPPct[0]}%`} />
+                  <SliderField label="Dominance k" value={csKDom} onChange={setCsKDom} min={1} max={3} step={1} format={(v) => String(v)} helpText="Number of top contributors to check" />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm">Apply Secondary Suppression</Label>
+                      <p className="text-xs text-muted-foreground">Greedy secondary to prevent back-calculation</p>
+                    </div>
+                    <Switch checked={csSecondary} onCheckedChange={setCsSecondary} />
+                  </div>
+                </>)}
+
+                {preFlightChecks.length > 0 && <PreFlightPanel checks={preFlightChecks} />}
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
                 </div>
               </div>
-            </TabsContent>
+            </div>
+          )}
 
-            {/* ══ ATTACK MITIGATION MATRIX ════════════════════════════════════ */}
-            <TabsContent value="matrix" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5" />
-                    Privacy Technique vs. Attack Mitigation Matrix
-                  </CardTitle>
-                  <CardDescription>Based on the NIST-aligned blueprint. 15 techniques × 10 attack types.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-3 mb-4">
-                    {(["Stops","Partial","Fails"] as MitigationLevel[]).map((level) => (
-                      <div key={level} className="flex items-center gap-1.5">
-                        <MitigationBadge level={level} />
-                        <span className="text-xs text-muted-foreground">
-                          {level === "Stops" ? "Fully mitigated" : level === "Partial" ? "Partially mitigated" : "Not mitigated"}
-                        </span>
+          {/* ══ FAMILY 2: DIFFERENTIAL PRIVACY ════════════════════════════════ */}
+          {family === "dp" && (
+            <div className="flex gap-6">
+              <div className="w-[185px] shrink-0">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Mechanism</p>
+                <TechList items={DP_TECHNIQUES} selected={dpTech} onSelect={(id) => { setDpTech(id); setResult(null); }} />
+                <div className="mt-5 space-y-2">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Column Config</p>
+                  <div className="space-y-1 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${epsilonBadgeClass(epsilon[0])}`}>ε = {epsilon[0].toFixed(1)}</span>
+                      <span className="font-medium">{epsilonLabel(epsilon[0])}</span>
+                    </div>
+                    <p className="text-muted-foreground">Δf: {dpSensitivityMode === "auto" ? "Auto" : dpSensitivityMode === "iqr" ? "IQR" : "P1–P99"}</p>
+                  </div>
+                  {(dpTech === "laplace" || dpTech === "gaussian") && dpColumnPreview.numCols.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Numeric Cols ({dpColumnPreview.numCols.length})</p>
+                      <div className="space-y-0.5">
+                        {dpColumnPreview.numCols.slice(0, 8).map(({ col, sensitivity, risk }) => {
+                          const dot = risk === "high" ? "🔴" : risk === "med" ? "🟡" : "🟢";
+                          const fmtNum = (v: number) => v >= 1000 ? v.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : v.toFixed(2);
+                          return (
+                            <div key={col} className="flex items-center gap-1 text-[10px] py-0.5 border-b border-border/30 last:border-0">
+                              <span className="shrink-0">{dot}</span>
+                              <span className="font-medium w-16 truncate" title={col}>{col}</span>
+                              <span className="text-muted-foreground flex-1 text-right font-mono">Δf={fmtNum(sensitivity)}</span>
+                            </div>
+                          );
+                        })}
+                        {dpColumnPreview.numCols.length > 8 && <p className="text-[9px] text-muted-foreground">+{dpColumnPreview.numCols.length - 8} more</p>}
+                      </div>
+                      <p className="text-[9px] text-muted-foreground mt-1">🔴 &gt;10× · 🟡 1–10× · 🟢 &lt;1×</p>
+                    </div>
+                  )}
+                  {dpColumnPreview.catCols.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Categorical ({dpColumnPreview.catCols.length})</p>
+                      <div className="space-y-0.5">
+                        {dpColumnPreview.catCols.slice(0, 5).map(({ col, uniqueCount, entropy }) => (
+                          <div key={col} className="flex items-center gap-1 text-[10px] py-0.5 border-b border-border/30 last:border-0">
+                            <span className="font-medium w-16 truncate" title={col}>{col}</span>
+                            <span className="text-muted-foreground flex-1 text-right">{uniqueCount}v</span>
+                            <span className="font-mono text-violet-600 dark:text-violet-400 shrink-0">{entropy.toFixed(1)}b</span>
+                          </div>
+                        ))}
+                        {dpColumnPreview.catCols.length > 5 && <p className="text-[9px] text-muted-foreground">+{dpColumnPreview.catCols.length - 5} more</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0 space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    {DP_TECHNIQUES.find((t) => t.id === dpTech)?.label} Parameters
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{DP_TECHNIQUES.find((t) => t.id === dpTech)?.subtitle}</p>
+                </div>
+                <FormulaBox id={dpTech} />
+                <div className="space-y-2">
+                  <Label className="text-sm">Privacy Budget (ε)</Label>
+                  <Slider value={epsilon} onValueChange={setEpsilon} min={0.1} max={10} step={0.1} data-testid="slider-epsilon" />
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className="font-mono text-xs">ε = {epsilon[0].toFixed(1)}</Badge>
+                    <span className="text-xs text-muted-foreground">{epsilonLabel(epsilon[0])}</span>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {([0.1, 0.5, 1.0, 2.0, 5.0] as number[]).map((v) => (
+                      <button key={v} data-testid={`dp-epsilon-preset-${v}`} onClick={() => setEpsilon([v])}
+                        className={`rounded px-2 py-0.5 text-[10px] font-mono border transition-colors ${epsilon[0] === v ? "bg-purple-600 text-white border-purple-600" : "border-border text-muted-foreground hover:border-purple-400 hover:text-purple-600"}`}
+                      >{v}</button>
+                    ))}
+                  </div>
+                </div>
+                {dpTech === "gaussian" && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">Delta (δ) <span className="text-muted-foreground text-xs">— failure probability</span></Label>
+                    <RadioGroup value={String(delta[0])} onValueChange={(v) => setDelta([parseFloat(v)])} className="flex flex-wrap gap-3">
+                      {([["1e-5","1×10⁻⁵ (recommended)"],["1e-6","1×10⁻⁶ (stricter)"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-1.5">
+                          <RadioGroupItem value={v} id={`dp-delta-${v}`} data-testid={`dp-delta-${v}`} />
+                          <label htmlFor={`dp-delta-${v}`} className="text-xs font-mono cursor-pointer">{label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      σ = <strong>{(Math.sqrt(2 * Math.log(1.25 / delta[0])) / epsilon[0]).toFixed(3)} × Δf</strong>
+                    </p>
+                  </div>
+                )}
+                {dpTech === "exponential" && (
+                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-semibold text-foreground">Categorical columns only</p>
+                    <p>Pr[output = r] ∝ exp(ε·freq(r) / 2Δu). Higher ε = output biased toward common categories.</p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label className="text-sm">Sensitivity / Clipping Strategy</Label>
+                  <RadioGroup value={dpSensitivityMode} onValueChange={(v) => setDpSensitivityMode(v as SensitivityMode)} className="space-y-1.5">
+                    {([
+                      ["auto",       "Auto (Min–Max)",       "Δf = max − min. Exact but outliers inflate noise."],
+                      ["iqr",        "IQR-based (Robust)",   "Clips to 1.5×IQR. Outlier-resistant, lower noise."],
+                      ["percentile", "Percentile (1%–99%)", "Δf = P99 − P01. Good balance."],
+                    ] as [SensitivityMode, string, string][]).map(([val, title, desc]) => (
+                      <div key={val} className="flex items-start gap-1.5">
+                        <RadioGroupItem value={val} id={`dp-clip-${val}`} data-testid={`dp-clip-${val}`} className="mt-0.5 shrink-0" />
+                        <label htmlFor={`dp-clip-${val}`} className="cursor-pointer">
+                          <span className="text-[11px] font-medium">{title}</span>
+                          <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
+                        </label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">Budget (ε) Allocator</Label>
+                  {(() => {
+                    const nCols = dpTech === "exponential" ? dpColumnPreview.catCols.length : dpColumnPreview.numCols.length;
+                    const epsilonPerCol = nCols > 0 ? epsilon[0] / nCols : epsilon[0];
+                    const totalBasic = epsilon[0] * nCols;
+                    const spent = dpBudgetMode === "equal" ? epsilon[0] : totalBasic;
+                    const budgetPct = Math.min(100, (spent / Math.max(epsilon[0], 0.01)) * 100);
+                    return (<>
+                      <RadioGroup value={dpBudgetMode} onValueChange={(v) => setDpBudgetMode(v as typeof dpBudgetMode)} className="space-y-1.5">
+                        {([
+                          ["global",       "Global ε",       `Each col uses full ε = ${epsilon[0].toFixed(1)} (total = ${totalBasic.toFixed(1)})`],
+                          ["equal",        "Equal split",    `ε per col = ${epsilonPerCol.toFixed(3)}`],
+                          ["proportional", "Proportional",   "Low-sensitivity cols get more ε"],
+                        ] as [typeof dpBudgetMode, string, string][]).map(([val, title, desc]) => (
+                          <div key={val} className="flex items-start gap-1.5">
+                            <RadioGroupItem value={val} id={`dp-budget-${val}`} data-testid={`dp-budget-${val}`} className="mt-0.5 shrink-0" />
+                            <label htmlFor={`dp-budget-${val}`} className="cursor-pointer">
+                              <span className="text-[11px] font-medium">{title}</span>
+                              <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
+                            </label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden mt-1">
+                        <div className={`h-full rounded-full transition-all ${budgetPct > 100 ? "bg-rose-500" : budgetPct > 80 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(budgetPct, 100)}%` }} />
+                      </div>
+                    </>);
+                  })()}
+                </div>
+                {(dpTech === "laplace" || dpTech === "gaussian") && (
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <Label className="text-sm font-medium">Clamp output to valid range</Label>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Clamp noisy values back to [lo, hi] bounds.</p>
+                    </div>
+                    <Switch checked={dpPostClamp} onCheckedChange={setDpPostClamp} data-testid="dp-postclamp-toggle" />
+                  </div>
+                )}
+                {(dpTech === "laplace" || dpTech === "gaussian") && dpColumnPreview.catCols.length > 0 && (
+                  <div className="flex items-center justify-between rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 p-3">
+                    <div>
+                      <Label className="text-sm font-medium">Also protect categorical columns</Label>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Adds Exponential Mechanism to {dpColumnPreview.catCols.length} categorical col{dpColumnPreview.catCols.length !== 1 ? "s" : ""} (Mixed DP).</p>
+                    </div>
+                    <Switch checked={dpProtectCategorical} onCheckedChange={setDpProtectCategorical} data-testid="dp-protect-categorical-toggle" />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label className="text-sm">Composition Accounting</Label>
+                  <RadioGroup value={dpCompositionMode} onValueChange={(v) => setDpCompositionMode(v as typeof dpCompositionMode)} className="space-y-1.5">
+                    {([
+                      ["basic",    "Basic (sequential)",  "ε_total = Σεᵢ — simple, conservative"],
+                      ["advanced", "Advanced (moments)",  "Tighter via moment generating functions"],
+                      ["renyi",    "Rényi DP",            "Tightest — uses Rényi divergence"],
+                    ] as [typeof dpCompositionMode, string, string][]).map(([val, title, desc]) => (
+                      <div key={val} className="flex items-start gap-1.5">
+                        <RadioGroupItem value={val} id={`dp-comp-${val}`} data-testid={`dp-comp-${val}`} className="mt-0.5 shrink-0" />
+                        <label htmlFor={`dp-comp-${val}`} className="cursor-pointer">
+                          <span className="text-[11px] font-medium">{title}</span>
+                          <span className="block text-[9px] text-muted-foreground leading-tight">{desc}</span>
+                        </label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Fixed Random Seed</Label>
+                    <p className="text-xs text-muted-foreground">Reproducible noise across runs</p>
+                  </div>
+                  <Switch checked={dpSeedEnabled} onCheckedChange={setDpSeedEnabled} data-testid="dp-seed-toggle" />
+                </div>
+                {dpSeedEnabled && (
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Seed Value</Label>
+                    <Input type="number" value={dpSeed} onChange={(e) => setDpSeed(parseInt(e.target.value) || 42)} className="h-8 text-xs font-mono w-32" data-testid="dp-seed-input" />
+                  </div>
+                )}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══ FAMILY 3: SYNTHETIC DATA GENERATION ═══════════════════════════ */}
+          {family === "synthetic" && (
+            <div className="flex gap-6">
+              <div className="w-[185px] shrink-0">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Generator</p>
+                <TechList items={SDG_TECHNIQUES} selected={sdgTech} onSelect={(id) => { setSdgTech(id); setResult(null); }} />
+              </div>
+              <div className="flex-1 min-w-0 space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    {SDG_TECHNIQUES.find((t) => t.id === sdgTech)?.label} Parameters
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{SDG_TECHNIQUES.find((t) => t.id === sdgTech)?.subtitle}</p>
+                </div>
+                <FormulaBox id={sdgTech} />
+                <SliderField label="Synthetic Dataset Size" value={synthSize} onChange={setSynthSize} min={10} max={Math.max(500, rawData.length)} step={10}
+                  format={(v) => String(v)} helpText={`Generate ${synthSize[0]} synthetic records (original: ${rawData.length} rows)`} />
+                {sdgTech === "stat-sdg" && (<>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm">Preserve Correlations</Label>
+                      <p className="text-xs text-muted-foreground">Gaussian Copula via Cholesky decomposition</p>
+                    </div>
+                    <Switch checked={preserveCorr} onCheckedChange={setPreserveCorr} data-testid="sdg-corr-toggle" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Bandwidth Rule (KDE)</Label>
+                    <RadioGroup value={synthBandwidthRule} onValueChange={(v) => setSynthBandwidthRule(v as typeof synthBandwidthRule)} className="space-y-1">
+                      {([["silverman","Silverman (default)"],["scott","Scott"],["fixed","Fixed h=0.5"]] as [string,string][]).map(([v, label]) => (
+                        <div key={v} className="flex items-center gap-2">
+                          <RadioGroupItem value={v} id={`bw-${v}`} data-testid={`sdg-bandwidth-${v}`} />
+                          <label htmlFor={`bw-${v}`} className="text-xs cursor-pointer">{label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                </>)}
+                {sdgTech === "dp-sdg" && (<>
+                  <SliderField label="Privacy Budget (ε)" value={epsilon} onChange={setEpsilon} min={0.1} max={10} step={0.1} format={(v) => v.toFixed(1)}
+                    helpText={`ε=${epsilon[0].toFixed(1)} — lower = more private, more noise`} />
+                  <SliderField label="Gradient Clip Norm (C)" value={dpSgdClip} onChange={setDpSgdClip} min={0.1} max={5.0} step={0.1} format={(v) => v.toFixed(1)}
+                    helpText={`Gradient clipping: ΔW̃ = ΔW / max(1, ‖ΔW‖ / C)`} />
+                  <div className="space-y-2">
+                    <Label className="text-sm">Training Epochs</Label>
+                    <Input type="number" value={dpSgdEpochs} onChange={(e) => setDpSgdEpochs(Math.max(10, Math.min(1000, parseInt(e.target.value) || 300)))}
+                      className="h-8 text-xs font-mono w-28" data-testid="dp-sgd-epochs-input" />
+                    <p className="text-xs text-muted-foreground">Range 10–1000. Fewer = faster but less accurate.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Batch Size</Label>
+                    <Input type="number" value={dpSgdBatchSize} onChange={(e) => setDpSgdBatchSize(Math.max(8, Math.min(4096, parseInt(e.target.value) || 500)))}
+                      className="h-8 text-xs font-mono w-28" data-testid="dp-sgd-batch-input" />
+                  </div>
+                  {(() => {
+                    const N = rawData.length || 1;
+                    const B = dpSgdBatchSize;
+                    const effectiveB = Math.min(B, N);
+                    const q = effectiveB / N;
+                    const T = dpSgdEpochs * Math.ceil(N / effectiveB);
+                    const sigma = computeSigmaFromEpsilon(epsilon[0], delta[0], T, q);
+                    const epsActual = computeEpsilonFromSigma(sigma, delta[0], T, q);
+                    const puIndex = Math.min(1, (1 - epsilon[0] / 10) * 0.5 + (1 - sigma / (sigma + 1)) * 0.5);
+                    return (
+                      <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Live Privacy Budget (RDP)</p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono">
+                          <span className="text-muted-foreground">Target ε</span><span className="font-semibold">{epsilon[0].toFixed(1)}</span>
+                          <span className="text-muted-foreground">Required σ</span><span className="font-semibold text-amber-600">{sigma.toFixed(3)}</span>
+                          <span className="text-muted-foreground">Achieved ε</span><span className={`font-semibold ${epsActual <= epsilon[0] * 1.05 ? "text-emerald-600" : "text-red-500"}`}>{epsActual.toFixed(3)}</span>
+                          <span className="text-muted-foreground">Privacy-Utility</span><span className="font-semibold">{(puIndex * 100).toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>)}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Fixed Random Seed</Label>
+                    <p className="text-xs text-muted-foreground">Reproducible generation across runs</p>
+                  </div>
+                  <Switch checked={synthSeedEnabled} onCheckedChange={setSynthSeedEnabled} data-testid="sdg-seed-toggle" />
+                </div>
+                {synthSeedEnabled && (
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Seed Value</Label>
+                    <Input type="number" value={synthSeed} onChange={(e) => setSynthSeed(parseInt(e.target.value) || 42)} className="h-8 text-xs font-mono w-32" data-testid="sdg-seed-input" />
+                  </div>
+                )}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══ FAMILY 4: CRYPTOGRAPHIC PETs ══════════════════════════════════ */}
+          {family === "crypto" && (
+            <div className="flex gap-6">
+              <div className="w-[185px] shrink-0">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Protocol</p>
+                <TechList items={CRYPTO_TECHNIQUES} selected={cryptoTech} onSelect={(id) => { setCryptoTech(id); setResult(null); }} />
+              </div>
+              <div className="flex-1 min-w-0 space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    {CRYPTO_TECHNIQUES.find((t) => t.id === cryptoTech)?.label} Parameters
+                  </p>
+                </div>
+                <FormulaBox id={cryptoTech} />
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    <strong>Educational Simulation.</strong> Demonstrates mathematical properties of the cryptographic protocol.
+                  </p>
+                </div>
+                {cryptoTech === "he" && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">Key Size</Label>
+                    <RadioGroup value={heKeySize} onValueChange={setHeKeySize} className="flex gap-4">
+                      {["512","1024","2048"].map((v) => (
+                        <div key={v} className="flex items-center gap-1.5">
+                          <RadioGroupItem value={v} id={`ks-${v}`} />
+                          <label htmlFor={`ks-${v}`} className="text-xs font-mono cursor-pointer">{v}-bit</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                )}
+                {cryptoTech === "smpc" && (<>
+                  <SliderField label="Number of Shares (k)" value={smpcShares} onChange={setSmpcShares} min={2} max={5} step={1} format={(v) => String(v)} helpText="Each value is split into k additive shares over Z_p" />
+                  <SliderField label="Reconstruction Threshold (t)" value={smpcThreshold} onChange={(v) => setSmpcThreshold([Math.min(v[0], smpcShares[0])])} min={2} max={smpcShares[0]} step={1} format={(v) => String(v)} helpText={`t=${smpcThreshold[0]} of k=${smpcShares[0]} shares needed to reconstruct`} />
+                </>)}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══ FAMILY 5: FEDERATED LEARNING ══════════════════════════════════ */}
+          {family === "federated" && (
+            <div className="flex gap-6">
+              <div className="w-[185px] shrink-0">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Algorithm</p>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300">
+                  <GitMerge className="h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="text-xs font-medium">FedAvg</p>
+                    <p className="text-[10px] text-muted-foreground">McMahan et al. 2017</p>
+                  </div>
+                </div>
+                {selectedDS && rawData.length > 0 && (
+                  <div className="mt-4 space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Dataset Info</p>
+                    {[
+                      ["Records (n)", rawData.length.toLocaleString("en-IN")],
+                      ["Columns (d)", String(allCols.length)],
+                      ["Numeric cols", String(numericCols.length)],
+                      [`Nodes (K=${fedNodes[0]})`, `~${Math.ceil(rawData.length / fedNodes[0])} rec/node`],
+                      ["Partition", fedPartition === "noniid" ? "Non-IID" : "IID"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex justify-between text-[11px]">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="font-mono font-medium">{value}</span>
                       </div>
                     ))}
                   </div>
-                  <ScrollArea className="w-full">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border-collapse min-w-[900px]">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left px-3 py-2 font-semibold w-[180px]">Technique</th>
-                            <th className="text-left px-2 py-2 font-semibold text-muted-foreground text-xs w-[80px]">Family</th>
-                            {ATTACK_COLUMNS.map((col) => (
-                              <th key={col.key} className="px-2 py-2 font-semibold text-center whitespace-nowrap">{col.short}</th>
-                            ))}
-                            <th className="px-2 py-2 font-semibold text-center whitespace-nowrap">Score</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {ATTACK_MATRIX.map((row) => {
-                            const counts = countMitigations(row);
-                            const score = counts.stops + counts.partial * 0.5;
-                            return (
-                              <tr key={row.technique} className="border-b hover:bg-muted/30 transition-colors">
-                                <td className="px-3 py-2 font-medium">{row.technique}</td>
-                                <td className="px-2 py-2">
-                                  <Badge variant="outline" className="text-[10px] py-0">{row.family}</Badge>
-                                </td>
-                                {ATTACK_COLUMNS.map((col) => (
-                                  <td key={col.key} className="px-2 py-2 text-center">
-                                    <MitigationBadge level={row.attacks[col.key]} />
-                                  </td>
-                                ))}
-                                <td className="px-2 py-2 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(score / 10) * 100}%` }} />
-                                    </div>
-                                    <span className="text-[10px] font-mono">{score.toFixed(1)}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </ScrollArea>
-                  <div className="mt-6 grid grid-cols-2 md:grid-cols-5 gap-3">
-                    {ATTACK_COLUMNS.map((col) => {
-                      const stopsCount   = ATTACK_MATRIX.filter((r) => r.attacks[col.key] === "Stops").length;
-                      const partialCount = ATTACK_MATRIX.filter((r) => r.attacks[col.key] === "Partial").length;
-                      return (
-                        <div key={col.key} className="rounded-lg border p-3">
-                          <p className="text-xs font-semibold truncate">{col.label}</p>
-                          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{stopsCount}</p>
-                          <p className="text-xs text-muted-foreground">{stopsCount} fully stop · {partialCount} partial</p>
-                        </div>
-                      );
-                    })}
+                )}
+              </div>
+              <div className="flex-1 min-w-0 space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">FedAvg Parameters</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">McMahan et al. 2017 — Federated Averaging with optional DP</p>
+                </div>
+                <FormulaBox id="fedavg" />
+                <SliderField label="Federated Nodes (K)" value={fedNodes} onChange={setFedNodes} min={2} max={10} step={1} format={(v) => String(v)} helpText={`Dataset partitioned across ${fedNodes[0]} simulated clients.`} />
+                <SliderField label="Communication Rounds (T)" value={fedRounds} onChange={setFedRounds} min={1} max={30} step={1} format={(v) => String(v)} helpText="Global FedAvg aggregation rounds" />
+                <div className="space-y-2">
+                  <Label className="text-sm">Partition Strategy</Label>
+                  <RadioGroup value={fedPartition} onValueChange={(v) => setFedPartition(v as "iid" | "noniid")} className="flex gap-5">
+                    <div className="flex items-center gap-1.5"><RadioGroupItem value="iid" id="fed-iid" /><label htmlFor="fed-iid" className="text-xs cursor-pointer">IID (random shuffle)</label></div>
+                    <div className="flex items-center gap-1.5"><RadioGroupItem value="noniid" id="fed-noniid" /><label htmlFor="fed-noniid" className="text-xs cursor-pointer">Non-IID (sorted skew)</label></div>
+                  </RadioGroup>
+                </div>
+                <SliderField label="Local Epochs (E)" value={fedLocalEpochs} onChange={setFedLocalEpochs} min={1} max={10} step={1} format={(v) => String(v)} helpText={`${fedLocalEpochs[0]} local SGD epoch(s) per node per round`} />
+                <SliderField label="Local Learning Rate (η)" value={fedLocalLR} onChange={setFedLocalLR} min={0.001} max={0.1} step={0.001} format={(v) => v.toFixed(3)} helpText="SGD learning rate on local data" />
+                <SliderField label="Mini-Batch Size (B)" value={fedBatchSize} onChange={setFedBatchSize} min={2} max={16} step={2} format={(v) => String(v)} helpText={`${fedBatchSize[0]} records per mini-batch`} />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Enable DP-FedAvg</Label>
+                    <p className="text-xs text-muted-foreground">Gaussian noise on gradient aggregation</p>
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                  <Switch checked={fedDP} onCheckedChange={setFedDP} data-testid="fed-dp-toggle" />
+                </div>
+                {fedDP && (<>
+                  <SliderField label="Privacy Budget (ε)" value={fedEps} onChange={setFedEps} min={0.1} max={10} step={0.1} format={(v) => v.toFixed(1)} helpText={`ε=${fedEps[0].toFixed(1)}`} />
+                  <SliderField label="Clip Norm (C)" value={fedClipNorm} onChange={setFedClipNorm} min={0.1} max={5.0} step={0.1} format={(v) => v.toFixed(1)} helpText="Update clipping norm" />
+                  <div className="rounded-md bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 px-3 py-2 text-[11px] text-rose-700 dark:text-rose-400">
+                    <p className="font-medium">Calibrated σ ≈ {(Math.sqrt(2 * fedRounds[0] * fedNodes[0] * Math.log(1 / fedDelta[0])) / fedEps[0]).toFixed(3)}</p>
+                    <p className="mt-0.5 opacity-80">σ = √(2TK·ln(1/δ)) / ε  (RDP composition bound)</p>
+                  </div>
+                </>)}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Generate Synthetic Output</Label>
+                    <p className="text-xs text-muted-foreground">Sample new records from trained decoder</p>
+                  </div>
+                  <Switch checked={fedGenSynth} onCheckedChange={setFedGenSynth} data-testid="fed-synth-toggle" />
+                </div>
+                {fedGenSynth && (
+                  <SliderField label="Synthetic Records" value={fedSynthSize} onChange={setFedSynthSize} min={10} max={500} step={10} format={(v) => String(v)} helpText={`Generate ${fedSynthSize[0]} synthetic records from decoder`} />
+                )}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Random Seed</Label>
+                  <Input type="number" value={fedSeed} onChange={(e) => setFedSeed(parseInt(e.target.value) || 42)} className="h-8 text-xs font-mono w-32" data-testid="fed-seed-input" />
+                  <p className="text-xs text-muted-foreground">Reproducible node partitioning and weight initialisation</p>
+                </div>
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <RunButton running={running} onRun={handleRun} disabled={!selectedDataset || rawData.length === 0} />
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </DashboardLayout>
