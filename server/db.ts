@@ -27,6 +27,13 @@ const toJSON = {
     ret.id = ret._id.toString();
     delete ret._id;
     delete ret.__v;
+    // Stringify all remaining ObjectId fields so comparisons with plain strings work
+    for (const key of Object.keys(ret)) {
+      const val = ret[key];
+      if (val && typeof val === "object" && val.constructor && val.constructor.name === "ObjectId") {
+        ret[key] = val.toString();
+      }
+    }
     return ret;
   },
 };

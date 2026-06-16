@@ -15,3 +15,4 @@
 - [Utility Measurement Module Spec](utility-module-spec.md) — OUS=30%SFS+25%DS+20%IC+15%CP+10%PU; server/utility-compute.ts math engine; non-aligned rows handled by mean-based NMAE; generalised values parsed as midpoints
 - [Backend Hot-Reload Gap](backend-no-hotreload.md) — dev script is `tsx server/index.ts` (no --watch); backend NEVER auto-reloads; workflow must be explicitly restarted after any server-side change or old code keeps running
 - [MongoDB Migration](mongodb-migration.md) — fully migrated from PostgreSQL/Drizzle to MongoDB/Mongoose; all IDs are now strings (ObjectId); ecosystem.config.cjs has URI placeholder; seedDefaults() in routes.ts creates admin+profiles on first boot
+- [MongoDB ObjectId toJSON Fix](mongodb-objectid-tojson.md) — userId and all ref fields stay as ObjectId objects unless toJSON transform stringifies them; fixed in db.ts global toJSON helper by iterating ret keys
