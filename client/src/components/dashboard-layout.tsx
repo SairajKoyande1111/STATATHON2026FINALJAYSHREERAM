@@ -21,7 +21,7 @@ export function DashboardLayout({ children, title, breadcrumbs = [] }: Dashboard
     <div className="flex min-h-screen w-full">
       <AppSidebar />
       <SidebarInset className="flex flex-col flex-1">
-        <main className="flex-1 overflow-auto p-8" style={{ fontFamily: "'Poppins', sans-serif" }}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-8 min-w-0" style={{ fontFamily: "'Poppins', sans-serif" }}>
           <div className="mb-8 flex items-start justify-between">
             <div>
               <h1

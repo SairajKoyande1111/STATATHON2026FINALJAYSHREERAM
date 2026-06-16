@@ -274,7 +274,7 @@ export default function UploadPage() {
       <div className="space-y-10" style={poppins}>
 
         {/* ── Two-column: Upload zone (left) | Guidelines (right) ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-8 items-start">
 
           {/* LEFT — upload zone */}
           <div className="flex flex-col gap-4">
